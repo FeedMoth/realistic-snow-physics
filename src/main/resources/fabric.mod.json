@@ -19,5 +19,8 @@
   "license": "All Rights Reserved",
   "name": "Realistic Snow Physics",
   "schemaVersion": 1,
-  "version": "${version}"
+  "version": "${version}",
+  "mixins": [
+    "realistic-snow-physics.mixins.json"
+  ]
 }
