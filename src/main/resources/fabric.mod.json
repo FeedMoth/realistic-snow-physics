@@ -4,9 +4,9 @@
   ],
   "depends": {
     "fabric-api": "*",
-    "fabricloader": ">=0.20.1",
-    "java": ">=25",
-    "minecraft": "~26.3"
+    "fabricloader": ">=0.16.0",
+    "java": ">=21",
+    "minecraft": "~1.21"
   },
   "description": "Snow that builds up during snowfall and melts near heat and in warm daylight, layer by layer, instead of appearing and vanishing as a single block.",
   "entrypoints": {

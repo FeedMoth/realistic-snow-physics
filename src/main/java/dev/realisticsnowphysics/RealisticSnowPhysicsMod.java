@@ -3,12 +3,12 @@ package dev.realisticsnowphysics;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.util.RandomSource;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Heightmap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,14 +23,15 @@ import org.slf4j.LoggerFactory;
  * each player gets a small number of random samples in a radius
  * around them. Snow only matters where a player can see it, and
  * vanilla only ticks loaded chunks, so player-centred sampling
- * keeps the cost flat no matter how large the world gets. Empty
- * regions are simply left for the next time a player walks there,
- * which matches how the vanilla game already treats them.
+ * keeps the cost flat no matter how large the world gets. This is
+ * also why the mod works on pre-generated chunks: it never relies
+ * on world generation, it only processes blocks already in a
+ * loaded chunk, whether that chunk was generated yesterday or
+ * five minutes ago.
  *
  * Runs on both sides: environment is "*", because the rules live
  * on the server side of a level, whether that level is a dedicated
- * server or the integrated server in singleplayer. No client-only
- * code is needed, and no custom rendering is used.
+ * server or the integrated server in singleplayer.
  */
 public class RealisticSnowPhysicsMod implements ModInitializer {
     public static final String MOD_ID = "realistic-snow-physics";
@@ -46,30 +47,21 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             if (!config.enabled) {
                 return;
             }
-            if (server.getTickCount() % Math.max(1, config.processIntervalTicks) != 0) {
+            if (server.getTicks() % Math.max(1, config.processIntervalTicks) != 0) {
                 return;
             }
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                ServerLevel level = player.serverLevel();
-                RandomSource random = level.getRandom();
-                BlockPos centre = player.blockPosition();
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                ServerWorld world = (ServerWorld) player.getEntityWorld();
+                BlockPos centre = player.getBlockPos();
                 int radius = Math.max(1, config.sampleRadius);
                 for (int i = 0; i < config.samplesPerPlayer; i++) {
-                    int x = centre.getX() + random.nextInt(radius * 2 + 1) - radius;
-                    int z = centre.getZ() + random.nextInt(radius * 2 + 1) - radius;
-                    // Start at the top of the world at that column and
-                    // walk down to the first non-air block. Snow lives
-                    // on the surface, so sampling the surface directly
-                    // is cheaper and more accurate than sampling
-                    // random heights and hoping to hit the ground.
-                    BlockPos surface = level.getHeightmapPos(
-                            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, new BlockPos(x, 0, z));
-                    // The surface block itself may be snow, which is
-                    // exactly what melt needs to see. Accumulation
-                    // needs the air just above it, so try both.
+                    int x = centre.getX() + world.getRandom().nextInt(radius * 2 + 1) - radius;
+                    int z = centre.getZ() + world.getRandom().nextInt(radius * 2 + 1) - radius;
+                    int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, x, z);
+                    BlockPos surface = new BlockPos(x, topY, z);
                     try {
-                        SnowProcessor.process(level, surface);
-                        SnowProcessor.process(level, surface.above());
+                        SnowProcessor.process(world, surface);
+                        SnowProcessor.process(world, surface.up());
                     } catch (Exception e) {
                         LOGGER.error("[Realistic Snow Physics] error processing snow at {}", surface, e);
                     }
@@ -77,17 +69,14 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             }
         });
 
-        // Operator-only reload, so config can be tuned without a
-        // restart. It only re-reads the config file; it never
-        // changes blocks by itself.
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(Commands.literal("realistic-snow-physics")
-                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                    .then(Commands.literal("reload")
+            dispatcher.register(CommandManager.literal("realistic-snow-physics")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
-                                context.getSource().sendSuccess(
-                                        () -> Component.literal("Realistic Snow Physics: config reloaded"),
+                                context.getSource().sendFeedback(
+                                        () -> Text.literal("Realistic Snow Physics: config reloaded"),
                                         false);
                                 return 1;
                             })));
