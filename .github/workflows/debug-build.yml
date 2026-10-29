@@ -2,7 +2,7 @@ name: debug-build
 on:
   push:
     tags:
-      - 'debug-263c'
+      - 'debug-263d'
 permissions:
   contents: write
 jobs:
@@ -25,4 +25,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view debug-263c >/dev/null 2>&1; then gh release upload debug-263c build.log --clobber; else gh release create debug-263c build.log --title "debug 26.3 build log" --notes "debug"; fi
+          if gh release view debug-263d >/dev/null 2>&1; then gh release upload debug-263d build.log --clobber; else gh release create debug-263d build.log --title "debug 26.3 build log" --notes "debug"; fi
