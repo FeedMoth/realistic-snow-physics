@@ -12,8 +12,8 @@ Snow that builds up during snowfall and melts near heat and in warm daylight, la
 
 ## Installation & Requirements
 
-- Ensure you are running Minecraft 26.3 with Fabric Loader and Fabric API installed. Grab the jar that matches your version.
-- Drop that jar into your mods folder: your server's mods folder for a dedicated server, or your game's mods folder for singleplayer. Jar names include the Minecraft version, so there is no guessing: realistic-snow-physics-1.0.0+26.3.jar is for 26.3.
+- Ensure you are running Minecraft 26.1.2 with Fabric Loader and Fabric API installed. Grab the jar that matches your version.
+- Drop that jar into your mods folder: your server's mods folder for a dedicated server, or your game's mods folder for singleplayer. Jar names include the Minecraft version, so there is no guessing: realistic-snow-physics-1.0.0+26.1.2.jar is for 26.3.
 - Restart the server, or the game.
 
 ## Configuration
