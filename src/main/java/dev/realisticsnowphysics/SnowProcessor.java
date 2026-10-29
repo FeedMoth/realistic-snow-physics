@@ -143,20 +143,83 @@ public final class SnowProcessor {
             int layers = state.get(SnowBlock.LAYERS);
             int max = RealisticSnowPhysicsConfig.get().maxLayers;
             if (layers >= max) {
-                return false;
+                if (!isValley(world, pos)) {
+                    return false;
+                }
+                int snowBlocksBelow = 0;
+                BlockPos cursor = pos.down();
+                for (int i = 0; i < 3; i++) {
+                    if (isSnowBlock(world.getBlockState(cursor))) {
+                        snowBlocksBelow++;
+                        cursor = cursor.down();
+                    } else {
+                        break;
+                    }
+                }
+                if (snowBlocksBelow >= 2) {
+                    return false;
+                }
+                world.setBlockState(pos, Blocks.SNOW_BLOCK.getDefaultState(), 3);
+                return true;
             }
             world.setBlockState(pos, state.with(SnowBlock.LAYERS, layers + 1), 3);
             return true;
         }
-        if (!state.isAir()) {
+        if (isSnowBlock(state)) {
+            BlockPos above = pos.up();
+            if (!world.getBlockState(above).isAir()) {
+                return false;
+            }
+            return accumulate(world, above);
+        }
+        if (!state.isAir() && !PlantStore.isPlant(state)) {
             return false;
         }
         BlockPos below = pos.down();
         if (!canHoldSnow(world, below)) {
             return false;
         }
+        BlockState current = world.getBlockState(pos);
+        if (PlantStore.isPlant(current)) {
+            PlantStore.store(world, pos, current);
+            world.setBlockState(pos.up(), Blocks.AIR.getDefaultState(), 3);
+        } else if (!current.isAir()) {
+            return false;
+        }
         world.setBlockState(pos, Blocks.SNOW.getDefaultState().with(SnowBlock.LAYERS, 1), 3);
         return true;
+    }
+
+    public static boolean isValley(ServerWorld world, BlockPos pos) {
+        int groundY = pos.getY();
+        BlockPos cursor = pos;
+        for (int i = 0; i < 4; i++) {
+            BlockState below = world.getBlockState(cursor.down());
+            if (isSnowLayer(below) || isSnowBlock(below)) {
+                cursor = cursor.down();
+                continue;
+            }
+            groundY = cursor.down().getY();
+            break;
+        }
+        int higher = 0;
+        int totalDiff = 0;
+        int count = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                int neighbourY = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING, pos.getX() + dx, pos.getZ() + dz);
+                int diff = neighbourY - groundY;
+                if (diff >= 2) {
+                    higher++;
+                }
+                totalDiff += diff;
+                count++;
+            }
+        }
+        return higher >= 8 || (count > 0 && totalDiff / count >= 2);
     }
 
     public static boolean melt(ServerWorld world, BlockPos pos) {
@@ -164,6 +227,18 @@ public final class SnowProcessor {
         if (isSnowLayer(state)) {
             int layers = state.get(SnowBlock.LAYERS);
             if (layers <= 1) {
+                PlantStore.StoredPlant plant = PlantStore.take(world, pos);
+                if (plant != null) {
+                    BlockState restored = PlantStore.restoreState(plant);
+                    if (restored != null) {
+                        world.setBlockState(pos, restored, 3);
+                        if (PlantStore.isTallPlant(restored) && world.getBlockState(pos.up()).isAir()) {
+                            world.setBlockState(pos.up(), restored.with(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER), 3);
+                        }
+                        PlantStore.saveIfDirty();
+                        return true;
+                    }
+                }
                 world.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
             } else {
                 world.setBlockState(pos, state.with(SnowBlock.LAYERS, layers - 1), 3);
@@ -216,7 +291,8 @@ public final class SnowProcessor {
                     continue;
                 }
                 BlockPos bare = surface.up();
-                if (world.getBlockState(bare).isAir() && canHoldSnow(world, surface)) {
+                BlockState bareState = world.getBlockState(bare);
+                if ((bareState.isAir() || PlantStore.isPlant(bareState)) && canHoldSnow(world, surface)) {
                     barePositions.add(bare);
                     bareHeights.add(bare.getY());
                 }
@@ -224,6 +300,7 @@ public final class SnowProcessor {
         }
         sortByHeight(snowPositions, snowHeights);
         sortByHeight(barePositions, bareHeights);
+        snowPositions.sort((a, b) -> Boolean.compare(!isSnowBlock(world.getBlockState(a)), !isSnowBlock(world.getBlockState(b))));
         if (config.meltEnabled) {
             int melted = 0;
             int meltBatch = meltBatchScaled;
@@ -244,9 +321,6 @@ public final class SnowProcessor {
                 } else if (bright) {
                     chance = config.coldSunMeltChance;
                 }
-                if (isSnowBlock(world.getBlockState(pos))) {
-                    chance *= 0.5;
-                }
                 if (chance > 0.0 && world.getRandom().nextDouble() < chance) {
                     if (melt(world, pos)) {
                         melted++;
@@ -254,6 +328,25 @@ public final class SnowProcessor {
                 }
             }
         }
+        for (BlockPos pos : barePositions) {
+            if (canAccumulatePrecipitation(world, pos)) {
+                continue;
+            }
+            if (!world.getBlockState(pos).isAir()) {
+                continue;
+            }
+            PlantStore.StoredPlant plant = PlantStore.take(world, pos);
+            if (plant != null) {
+                BlockState restored = PlantStore.restoreState(plant);
+                if (restored != null) {
+                    world.setBlockState(pos, restored, 3);
+                    if (PlantStore.isTallPlant(restored) && world.getBlockState(pos.up()).isAir()) {
+                        world.setBlockState(pos.up(), restored.with(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER), 3);
+                    }
+                }
+            }
+        }
+        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }
@@ -282,6 +375,14 @@ public final class SnowProcessor {
                 break;
             }
             processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
+            if (isSnowBlock(world.getBlockState(pos))) {
+                if (canAccumulatePrecipitation(world, pos)) {
+                    if (accumulate(world, pos)) {
+                        done++;
+                    }
+                }
+                continue;
+            }
             if (!isSnowLayer(world.getBlockState(pos))) {
                 continue;
             }
@@ -323,6 +424,25 @@ public final class SnowProcessor {
             }
         }
 
+        for (BlockPos pos : barePositions) {
+            if (canAccumulatePrecipitation(world, pos)) {
+                continue;
+            }
+            if (!world.getBlockState(pos).isAir()) {
+                continue;
+            }
+            PlantStore.StoredPlant plant = PlantStore.take(world, pos);
+            if (plant != null) {
+                BlockState restored = PlantStore.restoreState(plant);
+                if (restored != null) {
+                    world.setBlockState(pos, restored, 3);
+                    if (PlantStore.isTallPlant(restored) && world.getBlockState(pos.up()).isAir()) {
+                        world.setBlockState(pos.up(), restored.with(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER), 3);
+                    }
+                }
+            }
+        }
+        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }
