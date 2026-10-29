@@ -42,6 +42,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
     @Override
     public void onInitialize() {
         RealisticSnowPhysicsConfig.load();
+        PlantStore.load();
         LOGGER.info("[Realistic Snow Physics] loaded: snow builds up in snowfall and melts near heat");
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -75,6 +76,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                     .then(Commands.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
+        PlantStore.load();
                                 context.getSource().sendSuccess(
                                         () -> Component.literal("Realistic Snow Physics: config reloaded"),
                                         false);

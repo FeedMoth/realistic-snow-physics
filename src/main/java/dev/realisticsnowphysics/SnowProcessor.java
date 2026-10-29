@@ -156,27 +156,96 @@ public final class SnowProcessor {
      * the world changed. {@code pos} is the air or snow position
      * itself, not the ground below it.
      */
+    public static boolean isValley(ServerLevel level, BlockPos pos) {
+        int groundY = pos.getY();
+        BlockPos cursor = pos;
+        for (int i = 0; i < 4; i++) {
+            BlockState below = level.getBlockState(cursor.below());
+            if (isSnowLayer(below) || isSnowBlock(below)) {
+                cursor = cursor.below();
+                continue;
+            }
+            groundY = cursor.below().getY();
+            break;
+        }
+        int higher = 0;
+        int totalDiff = 0;
+        int count = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                BlockPos neighbour = level.getHeightmapPos(
+                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                        new BlockPos(pos.getX() + dx, 0, pos.getZ() + dz));
+                int diff = neighbour.getY() - groundY;
+                if (diff >= 2) {
+                    higher++;
+                }
+                totalDiff += diff;
+                count++;
+            }
+        }
+        return higher >= 8 || (count > 0 && totalDiff / count >= 2);
+    }
+
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (isSnowLayer(state)) {
             int layers = state.getValue(SnowLayerBlock.LAYERS);
             int max = RealisticSnowPhysicsConfig.get().maxLayers;
             if (layers >= max) {
-                return false;
+                if (!isValley(level, pos)) {
+                    return false;
+                }
+                int snowBlocksBelow = 0;
+                BlockPos cursor = pos.below();
+                for (int i = 0; i < 3; i++) {
+                    if (isSnowBlock(level.getBlockState(cursor))) {
+                        snowBlocksBelow++;
+                        cursor = cursor.below();
+                    } else {
+                        break;
+                    }
+                }
+                if (snowBlocksBelow >= 2) {
+                    return false;
+                }
+                level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 3);
+                return true;
             }
             level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers + 1), 3);
             return true;
         }
-        if (!state.isAir()) {
+        if (isSnowBlock(state)) {
+            BlockPos above = pos.above();
+            if (!level.getBlockState(above).isAir()) {
+                return false;
+            }
+            return accumulate(level, above);
+        }
+        if (!state.isAir() && !PlantStore.isPlant(state)) {
             return false;
         }
         BlockPos below = pos.below();
         if (!canHoldSnow(level, below)) {
             return false;
         }
-        // Do not bury plants, torches, or other small blocks: snow
-        // should land on ground, not replace what is already there.
-        // Air above a solid block is the only accumulation case.
+        // Plants are buried, not left poking through snow, and they
+        // are remembered so melt can bring them back. Torches and
+        // other small blocks are still left alone.
+        BlockState current = level.getBlockState(pos);
+        if (PlantStore.isPlant(current)) {
+            PlantStore.store(level, pos, current);
+            if (PlantStore.isTallPlant(current) && PlantStore.isTallPlant(level.getBlockState(pos.above()))) {
+                level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3);
+            } else if (PlantStore.isTallPlant(current)) {
+                level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3);
+            }
+        } else if (!current.isAir()) {
+            return false;
+        }
         level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, 1), 3);
         return true;
     }
@@ -190,6 +259,20 @@ public final class SnowProcessor {
         if (isSnowLayer(state)) {
             int layers = state.getValue(SnowLayerBlock.LAYERS);
             if (layers <= 1) {
+                PlantStore.StoredPlant plant = PlantStore.take(level, pos);
+                if (plant != null) {
+                    BlockState restored = PlantStore.restoreState(plant);
+                    if (restored != null) {
+                        level.setBlock(pos, restored, 3);
+                        if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
+                            BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
+                                    net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
+                            level.setBlock(pos.above(), upper, 3);
+                        }
+                        PlantStore.saveIfDirty();
+                        return true;
+                    }
+                }
                 level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
             } else {
                 level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers - 1), 3);
@@ -253,7 +336,8 @@ public final class SnowProcessor {
                     continue;
                 }
                 BlockPos bare = surface.above();
-                if (level.getBlockState(bare).isAir() && canHoldSnow(level, surface)) {
+                BlockState bareState = level.getBlockState(bare);
+                if ((bareState.isAir() || PlantStore.isPlant(bareState)) && canHoldSnow(level, surface)) {
                     barePositions.add(bare);
                     bareHeights.add(bare.getY());
                 }
@@ -263,6 +347,10 @@ public final class SnowProcessor {
         // in parallel lists keeps this simple without a new record type.
         sortByHeight(snowPositions, snowHeights);
         sortByHeight(barePositions, bareHeights);
+        // Full snow blocks melt first, otherwise a field of thin layers
+        // starves them: the melt batch is spent on low columns before a
+        // single full block on a hill is ever rolled.
+        snowPositions.sort((a, b) -> Boolean.compare(!isSnowBlock(level.getBlockState(a)), !isSnowBlock(level.getBlockState(b))));
         if (config.meltEnabled) {
             int melted = 0;
             int meltBatch = meltBatchScaled;
@@ -283,9 +371,6 @@ public final class SnowProcessor {
                 } else if (bright) {
                     chance = config.coldSunMeltChance;
                 }
-                if (isSnowBlock(level.getBlockState(pos))) {
-                    chance *= 0.5;
-                }
                 if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                     if (melt(level, pos)) {
                         melted++;
@@ -293,6 +378,31 @@ public final class SnowProcessor {
                 }
             }
         }
+        // Plants buried by Snow come back when their snow is gone and
+        // it is not snowing again right now, so a player clearing snow
+        // after a storm, or snow melting away, restores the flower,
+        // grass, or mushroom that was underneath.
+        for (BlockPos pos : barePositions) {
+            if (canAccumulatePrecipitation(level, pos)) {
+                continue;
+            }
+            if (!level.getBlockState(pos).isAir()) {
+                continue;
+            }
+            PlantStore.StoredPlant plant = PlantStore.take(level, pos);
+            if (plant != null) {
+                BlockState restored = PlantStore.restoreState(plant);
+                if (restored != null) {
+                    level.setBlock(pos, restored, 3);
+                    if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
+                        BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
+                                net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
+                        level.setBlock(pos.above(), upper, 3);
+                    }
+                }
+            }
+        }
+        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }
@@ -323,6 +433,14 @@ public final class SnowProcessor {
                 break;
             }
             processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
+            if (isSnowBlock(level.getBlockState(pos))) {
+                if (canAccumulatePrecipitation(level, pos)) {
+                    if (accumulate(level, pos)) {
+                        done++;
+                    }
+                }
+                continue;
+            }
             if (!isSnowLayer(level.getBlockState(pos))) {
                 continue;
             }
@@ -365,6 +483,31 @@ public final class SnowProcessor {
             }
         }
 
+        // Plants buried by Snow come back when their snow is gone and
+        // it is not snowing again right now, so a player clearing snow
+        // after a storm, or snow melting away, restores the flower,
+        // grass, or mushroom that was underneath.
+        for (BlockPos pos : barePositions) {
+            if (canAccumulatePrecipitation(level, pos)) {
+                continue;
+            }
+            if (!level.getBlockState(pos).isAir()) {
+                continue;
+            }
+            PlantStore.StoredPlant plant = PlantStore.take(level, pos);
+            if (plant != null) {
+                BlockState restored = PlantStore.restoreState(plant);
+                if (restored != null) {
+                    level.setBlock(pos, restored, 3);
+                    if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
+                        BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
+                                net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
+                        level.setBlock(pos.above(), upper, 3);
+                    }
+                }
+            }
+        }
+        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }
