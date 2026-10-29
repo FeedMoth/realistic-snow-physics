@@ -50,7 +50,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                 return;
             }
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                ServerLevel level = player.serverLevel();
+                ServerLevel level = player.level();
                 RandomSource random = level.getRandom();
                 BlockPos centre = player.blockPosition();
                 int radius = Math.max(1, config.sampleRadius);
