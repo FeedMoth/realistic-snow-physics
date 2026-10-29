@@ -104,4 +104,31 @@ public final class Seasons {
     public static boolean isWinter() {
         return getSeason() == Season.WINTER;
     }
+
+    public static double accumulationMultiplier() {
+        switch (getSeason()) {
+            case WINTER: return 1.25;
+            case SUMMER: return 0.25;
+            case AUTUMN: return 1.1;
+            default: return 1.0;
+        }
+    }
+
+    public static double meltMultiplier() {
+        switch (getSeason()) {
+            case WINTER: return 0.7;
+            case SUMMER: return 1.5;
+            case AUTUMN: return 0.9;
+            default: return 1.0;
+        }
+    }
+
+    public static float temperatureOffset() {
+        switch (getSeason()) {
+            case WINTER: return -0.5f;
+            case SUMMER: return 0.3f;
+            case AUTUMN: return -0.2f;
+            default: return 0.0f;
+        }
+    }
 }
