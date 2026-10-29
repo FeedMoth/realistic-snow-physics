@@ -97,7 +97,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                                 () -> Component.literal("Realistic Snow Physics: season set to " + Seasons.getSeason()),
                                                 false);
                                         return 1;
-                                    })));
+                                    }))));
         });
     }
 }
