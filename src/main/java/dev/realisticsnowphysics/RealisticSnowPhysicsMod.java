@@ -3,7 +3,6 @@ package dev.realisticsnowphysics;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -77,27 +76,10 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
                                 context.getSource().sendSuccess(
-                                        () -> Component.literal("Realistic Snow Physics: config reloaded, season " + Seasons.getSeason()),
+                                        () -> Component.literal("Realistic Snow Physics: config reloaded"),
                                         false);
                                 return 1;
-                            }))
-                    .then(Commands.literal("season")
-                            .then(Commands.argument("value", StringArgumentType.word())
-                                    .executes(context -> {
-                                        String value = StringArgumentType.getString(context, "value");
-                                        Seasons.Season season = Seasons.Season.parse(value);
-                                        if (season == Seasons.Season.UNKNOWN && !"auto".equalsIgnoreCase(value) && !"unknown".equalsIgnoreCase(value)) {
-                                            context.getSource().sendFailure(Component.literal("Unknown season, use auto, spring, summer, autumn, or winter"));
-                                            return 0;
-                                        }
-                                        RealisticSnowPhysicsConfig.get().season = value.toLowerCase();
-                                        RealisticSnowPhysicsConfig.save();
-                                        Seasons.setConfigSeason(season);
-                                        context.getSource().sendSuccess(
-                                                () -> Component.literal("Realistic Snow Physics: season set to " + Seasons.getSeason()),
-                                                false);
-                                        return 1;
-                                    }))));
+                            })));
         });
     }
 }
