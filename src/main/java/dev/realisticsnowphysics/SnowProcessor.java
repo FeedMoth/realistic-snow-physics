@@ -167,7 +167,7 @@ public final class SnowProcessor {
             level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers + 1), 3);
             return true;
         }
-        if (!state.isAir()) {
+        if (!state.isAir() && !PlantStore.isPlant(state)) {
             return false;
         }
         BlockPos below = pos.below();
