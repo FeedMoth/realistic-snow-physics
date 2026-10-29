@@ -27,10 +27,10 @@ public final class RealisticSnowPhysicsConfig {
     public int processIntervalTicks = 20;
 
     /** Random positions sampled per player per pass. Keeps the cost bounded. */
-    public int samplesPerPlayer = 16;
+    public int samplesPerPlayer = 64;
 
     /** Horizontal radius around a player in which snow is processed. */
-    public int sampleRadius = 24;
+    public int sampleRadius = 48;
 
     /** Maximum snow layers on one block. Vanilla snow layers go to 8. */
     public int maxLayers = 8;
