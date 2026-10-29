@@ -52,31 +52,64 @@ public final class SnowProcessor {
         return state.isOf(Blocks.SNOW_BLOCK);
     }
 
-    private static boolean isHeat(BlockState state) {
+    private static int heatRadiusFor(BlockState state, int strongRadius, int weakRadius) {
         if (state.isOf(Blocks.LAVA) || state.isOf(Blocks.FIRE) || state.isOf(Blocks.SOUL_FIRE)) {
-            return true;
+            return strongRadius;
         }
         if (state.isOf(Blocks.MAGMA_BLOCK)) {
-            return true;
+            return strongRadius;
         }
         if (state.isOf(Blocks.CAMPFIRE) || state.isOf(Blocks.SOUL_CAMPFIRE)) {
-            return state.get(CampfireBlock.LIT);
+            return state.get(CampfireBlock.LIT) ? strongRadius : 0;
         }
         if (state.isOf(Blocks.FURNACE) || state.isOf(Blocks.BLAST_FURNACE) || state.isOf(Blocks.SMOKER)) {
-            return state.get(Properties.LIT);
+            return state.get(Properties.LIT) ? strongRadius : 0;
         }
-        return false;
+        if (state.isOf(Blocks.TORCH) || state.isOf(Blocks.WALL_TORCH) || state.isOf(Blocks.LANTERN)
+                || state.isOf(Blocks.GLOWSTONE) || state.isOf(Blocks.JACK_O_LANTERN)) {
+            return weakRadius;
+        }
+        return 0;
     }
 
     public static boolean hasHeatNearby(ServerWorld world, BlockPos pos, int radius) {
+        RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        int weakRadius = Math.max(1, config.torchHeatRadius);
         for (BlockPos candidate : BlockPos.iterate(
                 pos.getX() - radius, pos.getY() - radius, pos.getZ() - radius,
                 pos.getX() + radius, pos.getY() + radius, pos.getZ() + radius)) {
-            if (isHeat(world.getBlockState(candidate))) {
+            int reach = heatRadiusFor(world.getBlockState(candidate), radius, weakRadius);
+            if (reach <= 0) {
+                continue;
+            }
+            int dx = Math.abs(candidate.getX() - pos.getX());
+            int dy = Math.abs(candidate.getY() - pos.getY());
+            int dz = Math.abs(candidate.getZ() - pos.getZ());
+            if (Math.max(dx, Math.max(dy, dz)) <= reach) {
                 return true;
             }
         }
         return false;
+    }
+
+    public static boolean isSnowing(ServerWorld world, BlockPos pos) {
+        return world.isRaining()
+                && world.getBiome(pos).value().hasPrecipitation()
+                && world.getBiome(pos).value().getTemperature() < 0.15f
+                && world.isSkyVisible(pos);
+    }
+
+    public static boolean isWinterPrecipitation(ServerWorld world, BlockPos pos) {
+        if (!Seasons.isWinter()) {
+            return false;
+        }
+        return world.isRaining()
+                && world.getBiome(pos).value().hasPrecipitation()
+                && world.isSkyVisible(pos);
+    }
+
+    public static boolean canAccumulatePrecipitation(ServerWorld world, BlockPos pos) {
+        return isSnowing(world, pos) || isWinterPrecipitation(world, pos);
     }
 
     private static boolean canHoldSnow(ServerWorld world, BlockPos below) {
@@ -174,17 +207,25 @@ public final class SnowProcessor {
         sortByHeight(barePositions, bareHeights);
         if (config.meltEnabled) {
             int melted = 0;
+            int meltBatch = Math.max(1, config.meltBatchSize);
             for (BlockPos pos : snowPositions) {
-                if (melted >= Math.max(1, batchSize)) {
+                if (melted >= meltBatch) {
                     break;
                 }
                 processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
                 BlockState state = world.getBlockState(pos);
-                boolean warmDaylight = world.isDay()
-                        && world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature
-                        && world.isSkyVisible(pos);
+                boolean bright = world.isDay() && world.isSkyVisible(pos);
+                boolean warm = world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature;
                 boolean heated = hasHeatNearby(world, pos, config.heatRadius);
-                if ((warmDaylight || heated) && world.getRandom().nextDouble() < config.meltChance) {
+                double chance = 0.0;
+                if (heated) {
+                    chance = config.heatMeltChance;
+                } else if (bright && warm) {
+                    chance = config.warmMeltChance;
+                } else if (bright) {
+                    chance = config.coldSunMeltChance;
+                }
+                if (chance > 0.0 && world.getRandom().nextDouble() < chance) {
                     if (melt(world, pos)) {
                         melted++;
                     }
@@ -196,9 +237,7 @@ public final class SnowProcessor {
         }
         java.util.ArrayList<BlockPos> accumulableBare = new java.util.ArrayList<>();
         for (BlockPos pos : barePositions) {
-            if (world.isRaining() && world.getBiome(pos).value().hasPrecipitation()
-                    && world.getBiome(pos).value().getTemperature() < config.warmBiomeTemperature
-                    && world.isSkyVisible(pos)) {
+            if (canAccumulatePrecipitation(world, pos)) {
                 accumulableBare.add(pos);
             }
         }
@@ -224,9 +263,7 @@ public final class SnowProcessor {
             if (!isSnowLayer(world.getBlockState(pos))) {
                 continue;
             }
-            if (world.isRaining() && world.getBiome(pos).value().hasPrecipitation()
-                    && world.getBiome(pos).value().getTemperature() < config.warmBiomeTemperature
-                    && world.isSkyVisible(pos)) {
+            if (canAccumulatePrecipitation(world, pos)) {
                 if (accumulate(world, pos)) {
                     done++;
                 }
@@ -254,11 +291,11 @@ public final class SnowProcessor {
         BlockState state = world.getBlockState(pos);
 
         if (config.meltEnabled && (isSnowLayer(state) || isSnowBlock(state))) {
-            boolean warmDaylight = world.isDay()
-                    && world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature
-                    && world.isSkyVisible(pos);
+            boolean bright = world.isDay() && world.isSkyVisible(pos);
+            boolean warm = world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature;
             boolean heated = hasHeatNearby(world, pos, config.heatRadius);
-            if ((warmDaylight || heated) && world.getRandom().nextDouble() < config.meltChance) {
+            double chance = heated ? config.heatMeltChance : (bright && warm ? config.warmMeltChance : (bright ? config.coldSunMeltChance : 0.0));
+            if (chance > 0.0 && world.getRandom().nextDouble() < chance) {
                 melt(world, pos);
                 return;
             }
@@ -267,13 +304,7 @@ public final class SnowProcessor {
         if (!config.accumulationEnabled) {
             return;
         }
-        if (!world.isRaining() || !world.getBiome(pos).value().hasPrecipitation()) {
-            return;
-        }
-        if (world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature) {
-            return;
-        }
-        if (!world.isSkyVisible(pos)) {
+        if (!canAccumulatePrecipitation(world, pos)) {
             return;
         }
         if (world.getRandom().nextDouble() >= config.accumulationChance) {
