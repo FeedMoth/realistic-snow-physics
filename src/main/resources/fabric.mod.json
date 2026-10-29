@@ -1,1 +1,26 @@
-{"authors":["FeedMoth"],"depends":{"fabric-api":"*","fabricloader":">=0.20.1","java":">=25","minecraft":"~26.1"},"description":"Snow that builds up during snowfall and melts near heat and in warm daylight, layer by layer, instead of appearing and vanishing as a single block.","entrypoints":{"main":["dev.realisticsnowphysics.RealisticSnowPhysicsMod"]},"environment":"*","id":"realistic-snow-physics","license":"All Rights Reserved","name":"Realistic Snow Physics","schemaVersion":1,"version":"${version}"}
+{
+  "authors": [
+    "FeedMoth"
+  ],
+  "depends": {
+    "fabric-api": "*",
+    "fabricloader": ">=0.20.1",
+    "java": ">=25",
+    "minecraft": "~26.1"
+  },
+  "description": "Snow that builds up during snowfall and melts near heat and in warm daylight, layer by layer, instead of appearing and vanishing as a single block.",
+  "entrypoints": {
+    "main": [
+      "dev.realisticsnowphysics.RealisticSnowPhysicsMod"
+    ]
+  },
+  "environment": "*",
+  "id": "realistic-snow-physics",
+  "license": "All Rights Reserved",
+  "name": "Realistic Snow Physics",
+  "schemaVersion": 1,
+  "version": "${version}",
+  "mixins": [
+    "realistic-snow-physics.mixins.json"
+  ]
+}
