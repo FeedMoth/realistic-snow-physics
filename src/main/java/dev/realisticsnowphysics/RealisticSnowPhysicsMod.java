@@ -52,12 +52,14 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             if (server.getTicks() % Math.max(1, config.processIntervalTicks) != 0) {
                 return;
             }
+            java.util.Map<ServerWorld, java.util.Set<Long>> processedByLevel = new java.util.HashMap<>();
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 ServerWorld world = (ServerWorld) player.getWorld();
                 BlockPos centre = player.getBlockPos();
                 int radius = Math.max(1, config.sampleRadius);
                 try {
-                    SnowProcessor.processArea(world, centre, radius, config.samplesPerPlayer);
+                    java.util.Set<Long> processed = processedByLevel.computeIfAbsent(world, k -> new java.util.HashSet<Long>());
+                    SnowProcessor.processArea(world, centre, radius, config.samplesPerPlayer, processed);
                 } catch (Exception e) {
                     LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }
