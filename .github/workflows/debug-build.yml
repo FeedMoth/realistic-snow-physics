@@ -1,0 +1,28 @@
+name: debug-build
+on:
+  push:
+    tags:
+      - 'debug-263f'
+permissions:
+  contents: write
+jobs:
+  debug:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build with log
+        run: ./gradlew build --stacktrace > build.log 2>&1; echo "exit=$?" >> build.log; tail -200 build.log || true
+      - name: publish log
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view debug-263f >/dev/null 2>&1; then gh release upload debug-263f build.log --clobber; else gh release create debug-263f build.log --title "debug 26.3 build log" --notes "debug"; fi
