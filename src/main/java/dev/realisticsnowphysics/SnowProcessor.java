@@ -16,9 +16,13 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * no world generation in this mod: accumulation and melt only look
  * at blocks already in a loaded chunk, when a player is nearby.
  *
- * Accumulation only happens where snow is actually falling: the level
- * is precipitating at that position, the position has sky above it,
- * and the ground below can hold snow. A snow layer gains one layer
+ * Accumulation only happens where snow is actually falling: the
+ * precipitation at that position is snow, not rain, the position
+ * has sky above it, and the ground below can hold snow. Rain in
+ * a biome never makes snow. In winter, if a seasons system is
+ * active, precipitation in any biome that has precipitation at
+ * all can fall as snow, except deserts and other no-precipitation
+ * biomes, which stay dry. A snow layer gains one layer
  * at a time, up to the configured maximum. A flat solid block gains
  * its first layer.
  *
@@ -55,31 +59,62 @@ public final class SnowProcessor {
         return state.is(Blocks.SNOW_BLOCK);
     }
 
-    private static boolean isHeat(BlockState state) {
+    private static int heatRadiusFor(BlockState state, int strongRadius, int weakRadius) {
         if (state.is(Blocks.LAVA) || state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE)) {
-            return true;
+            return strongRadius;
         }
         if (state.is(Blocks.MAGMA_BLOCK)) {
-            return true;
+            return strongRadius;
         }
         if (state.is(Blocks.CAMPFIRE) || state.is(Blocks.SOUL_CAMPFIRE)) {
-            return state.hasProperty(CampfireBlock.LIT) && state.getValue(CampfireBlock.LIT);
+            return state.hasProperty(CampfireBlock.LIT) && state.getValue(CampfireBlock.LIT) ? strongRadius : 0;
         }
         if (state.is(Blocks.FURNACE) || state.is(Blocks.BLAST_FURNACE) || state.is(Blocks.SMOKER)) {
-            return state.hasProperty(BlockStateProperties.LIT) && state.getValue(BlockStateProperties.LIT);
+            return state.hasProperty(BlockStateProperties.LIT) && state.getValue(BlockStateProperties.LIT) ? strongRadius : 0;
         }
-        return false;
+        if (state.is(Blocks.TORCH) || state.is(Blocks.WALL_TORCH) || state.is(Blocks.LANTERN)
+                || state.is(Blocks.GLOWSTONE) || state.is(Blocks.JACK_O_LANTERN)) {
+            return weakRadius;
+        }
+        return 0;
     }
 
     public static boolean hasHeatNearby(ServerLevel level, BlockPos pos, int radius) {
+        RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        int weakRadius = Math.max(1, config.torchHeatRadius);
         for (BlockPos candidate : BlockPos.betweenClosed(
                 pos.getX() - radius, pos.getY() - radius, pos.getZ() - radius,
                 pos.getX() + radius, pos.getY() + radius, pos.getZ() + radius)) {
-            if (isHeat(level.getBlockState(candidate))) {
+            int reach = heatRadiusFor(level.getBlockState(candidate), radius, weakRadius);
+            if (reach <= 0) {
+                continue;
+            }
+            int dx = Math.abs(candidate.getX() - pos.getX());
+            int dy = Math.abs(candidate.getY() - pos.getY());
+            int dz = Math.abs(candidate.getZ() - pos.getZ());
+            if (Math.max(dx, Math.max(dy, dz)) <= reach) {
                 return true;
             }
         }
         return false;
+    }
+
+    public static boolean isSnowing(ServerLevel level, BlockPos pos) {
+        return level.precipitationAt(pos) == net.minecraft.world.level.biome.Biome.Precipitation.SNOW;
+    }
+
+    public static boolean isWinterPrecipitation(ServerLevel level, BlockPos pos) {
+        if (!Seasons.isWinter()) {
+            return false;
+        }
+        if (!level.isRaining() || !level.canSeeSky(pos)) {
+            return false;
+        }
+        return level.getBiome(pos).value().hasPrecipitation();
+    }
+
+    public static boolean canAccumulatePrecipitation(ServerLevel level, BlockPos pos) {
+        return isSnowing(level, pos) || isWinterPrecipitation(level, pos);
     }
 
     private static boolean canHoldSnow(ServerLevel level, BlockPos below) {
@@ -207,17 +242,25 @@ public final class SnowProcessor {
         sortByHeight(barePositions, bareHeights);
         if (config.meltEnabled) {
             int melted = 0;
+            int meltBatch = Math.max(1, config.meltBatchSize);
             for (BlockPos pos : snowPositions) {
-                if (melted >= Math.max(1, batchSize)) {
+                if (melted >= meltBatch) {
                     break;
                 }
                 processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
                 BlockState state = level.getBlockState(pos);
-                boolean warmDaylight = level.isBrightOutside()
-                        && level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature
-                        && level.canSeeSky(pos);
+                boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
+                boolean warm = level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature;
                 boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                if ((warmDaylight || heated) && level.getRandom().nextDouble() < config.meltChance) {
+                double chance = 0.0;
+                if (heated) {
+                    chance = config.heatMeltChance;
+                } else if (bright && warm) {
+                    chance = config.warmMeltChance;
+                } else if (bright) {
+                    chance = config.coldSunMeltChance;
+                }
+                if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                     if (melt(level, pos)) {
                         melted++;
                     }
@@ -230,9 +273,7 @@ public final class SnowProcessor {
         // Bare ground wins: blanket first, no piling until covered.
         java.util.ArrayList<BlockPos> accumulableBare = new java.util.ArrayList<>();
         for (BlockPos pos : barePositions) {
-            if (level.isRainingAt(pos)
-                    && level.getBiome(pos).value().getBaseTemperature() < config.warmBiomeTemperature
-                    && level.canSeeSky(pos)) {
+            if (canAccumulatePrecipitation(level, pos)) {
                 accumulableBare.add(pos);
             }
         }
@@ -259,9 +300,7 @@ public final class SnowProcessor {
             if (!isSnowLayer(level.getBlockState(pos))) {
                 continue;
             }
-            if (level.isRainingAt(pos)
-                    && level.getBiome(pos).value().getBaseTemperature() < config.warmBiomeTemperature
-                    && level.canSeeSky(pos)) {
+            if (canAccumulatePrecipitation(level, pos)) {
                 if (accumulate(level, pos)) {
                     done++;
                 }
@@ -290,11 +329,11 @@ public final class SnowProcessor {
         BlockState state = level.getBlockState(pos);
 
         if (config.meltEnabled && (isSnowLayer(state) || isSnowBlock(state))) {
-            boolean warmDaylight = level.isBrightOutside()
-                    && level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature
-                    && level.canSeeSky(pos);
+            boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
+            boolean warm = level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature;
             boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-            if ((warmDaylight || heated) && level.getRandom().nextDouble() < config.meltChance) {
+            double chance = heated ? config.heatMeltChance : (bright && warm ? config.warmMeltChance : (bright ? config.coldSunMeltChance : 0.0));
+            if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                 melt(level, pos);
                 return;
             }
@@ -303,13 +342,7 @@ public final class SnowProcessor {
         if (!config.accumulationEnabled) {
             return;
         }
-        if (!level.isRainingAt(pos)) {
-            return;
-        }
-        if (level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature) {
-            return;
-        }
-        if (!level.canSeeSky(pos)) {
+        if (!canAccumulatePrecipitation(level, pos)) {
             return;
         }
         if (level.getRandom().nextDouble() >= config.accumulationChance) {
