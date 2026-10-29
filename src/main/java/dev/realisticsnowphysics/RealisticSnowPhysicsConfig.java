@@ -27,7 +27,7 @@ public final class RealisticSnowPhysicsConfig {
     public int processIntervalTicks = 20;
 
     /** Random positions sampled per player per pass. Keeps the cost bounded. */
-    public int samplesPerPlayer = 64;
+    public int samplesPerPlayer = 8;
 
     /** Horizontal radius around a player in which snow is processed. */
     public int sampleRadius = 48;
@@ -41,20 +41,45 @@ public final class RealisticSnowPhysicsConfig {
     /** Chance, per sample, that a qualifying melt position loses a layer. */
     public double meltChance = 0.5;
 
+    /** Snow columns melted per pass. Melt is area-wide, so this is larger than accumulation. */
+    public int meltBatchSize = 48;
+
+    /** Melt chance per column near heat, in warm daylight, and in cold sun, per pass. */
+    public double heatMeltChance = 0.8;
+    public double warmMeltChance = 0.6;
+    public double coldSunMeltChance = 0.08;
+
     /** How far heat is searched for, in blocks, in each direction. */
     public int heatRadius = 4;
 
+    /** How far weak heat, torches, lanterns, and glowstone, reaches. */
+    public int torchHeatRadius = 2;
+
     /**
      * Biome temperature at or above which snow melts in daylight.
-     * Cold biomes sit well below this, temperate biomes sit near it.
+     * 0.15 is the vanilla freezing point, the snow/rain split, so
+     * normal taiga at 0.25 melts in daylight and never snows.
      */
-    public float warmBiomeTemperature = 0.3f;
+    public float warmBiomeTemperature = 0.15f;
+
+    /** Season override for testing and for the seasons hook: auto, spring, summer, autumn, winter. */
+    public String season = "auto";
 
     private RealisticSnowPhysicsConfig() {
     }
 
     public static RealisticSnowPhysicsConfig get() {
         return instance;
+    }
+
+    public static void save() {
+        try {
+            Path path = FabricLoader.getInstance().getConfigDir().resolve("realistic-snow-physics.json");
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, GSON.toJson(instance));
+        } catch (IOException e) {
+            RealisticSnowPhysicsMod.LOGGER.error("[Realistic Snow Physics] config could not be saved", e);
+        }
     }
 
     public static void load() {
@@ -66,6 +91,8 @@ public final class RealisticSnowPhysicsConfig {
                     instance = loaded;
                 }
                 RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] config loaded from {}", path);
+                Seasons.setConfigSeason(Seasons.Season.parse(instance.season));
+                Seasons.refreshFromFile();
             } else {
                 Files.createDirectories(path.getParent());
                 Files.writeString(path, GSON.toJson(instance));

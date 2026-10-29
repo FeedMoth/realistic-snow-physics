@@ -3,6 +3,7 @@ package dev.realisticsnowphysics;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -73,10 +74,27 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
                                 context.getSource().sendFeedback(
-                                        () -> Text.literal("Realistic Snow Physics: config reloaded"),
+                                        () -> Text.literal("Realistic Snow Physics: config reloaded, season " + Seasons.getSeason()),
                                         false);
                                 return 1;
-                            })));
+                            }))
+                    .then(CommandManager.literal("season")
+                            .then(CommandManager.argument("value", StringArgumentType.word())
+                                    .executes(context -> {
+                                        String value = StringArgumentType.getString(context, "value");
+                                        Seasons.Season season = Seasons.Season.parse(value);
+                                        if (season == Seasons.Season.UNKNOWN && !"auto".equalsIgnoreCase(value) && !"unknown".equalsIgnoreCase(value)) {
+                                            context.getSource().sendError(Text.literal("Unknown season, use auto, spring, summer, autumn, or winter"));
+                                            return 0;
+                                        }
+                                        RealisticSnowPhysicsConfig.get().season = value.toLowerCase();
+                                        RealisticSnowPhysicsConfig.save();
+                                        Seasons.setConfigSeason(season);
+                                        context.getSource().sendFeedback(
+                                                () -> Text.literal("Realistic Snow Physics: season set to " + Seasons.getSeason()),
+                                                false);
+                                        return 1;
+                                    })));
         });
     }
 }
