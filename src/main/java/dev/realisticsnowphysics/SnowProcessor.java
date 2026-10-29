@@ -26,6 +26,16 @@ import net.minecraft.util.math.Direction;
  * sky above it, and the ground below can hold snow. A snow layer
  * gains one layer at a time, up to the configured maximum.
  *
+ * Blanket first, lowest first, then pile up. Snow does not appear
+ * as random spots with green ground between them. Each pass scans
+ * the ground around a player from the lowest surface upwards. If
+ * any ground in that area is still bare, that pass only puts a
+ * first layer on bare ground, lowest first. Only once every
+ * accumulable spot already has at least one layer does a pass
+ * start adding a second, third, and further layer, again lowest
+ * first. Valleys fill before ridges, and the ground is covered
+ * before it piles up, which is how a real snowfall looks.
+ *
  * Melt happens near heat, or in warm daylight, also one layer at
  * a time. A snow block first becomes a seven-layer pile, then
  * melts down from there.
@@ -121,6 +131,111 @@ public final class SnowProcessor {
             return true;
         }
         return false;
+    }
+
+    public static void processArea(ServerWorld world, BlockPos centre, int radius, int batchSize) {
+        RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
+        java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> snowHeights = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> bareHeights = new java.util.ArrayList<>();
+        for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
+            for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                int topY = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING, x, z);
+                BlockPos surface = new BlockPos(x, topY, z);
+                BlockPos snowPos = null;
+                if (isSnowLayer(world.getBlockState(surface)) || isSnowBlock(world.getBlockState(surface))) {
+                    snowPos = surface;
+                } else if (isSnowLayer(world.getBlockState(surface.up()))
+                        || isSnowBlock(world.getBlockState(surface.up()))) {
+                    snowPos = surface.up();
+                }
+                if (snowPos != null) {
+                    snowPositions.add(snowPos);
+                    snowHeights.add(snowPos.getY());
+                    continue;
+                }
+                BlockPos bare = surface.up();
+                if (world.getBlockState(bare).isAir() && canHoldSnow(world, surface)) {
+                    barePositions.add(bare);
+                    bareHeights.add(bare.getY());
+                }
+            }
+        }
+        sortByHeight(snowPositions, snowHeights);
+        sortByHeight(barePositions, bareHeights);
+        if (config.meltEnabled) {
+            int melted = 0;
+            for (BlockPos pos : snowPositions) {
+                if (melted >= Math.max(1, batchSize)) {
+                    break;
+                }
+                BlockState state = world.getBlockState(pos);
+                boolean warmDaylight = world.isDay()
+                        && world.getBiome(pos).value().getTemperature() >= config.warmBiomeTemperature
+                        && world.isSkyVisible(pos);
+                boolean heated = hasHeatNearby(world, pos, config.heatRadius);
+                if ((warmDaylight || heated) && world.getRandom().nextDouble() < config.meltChance) {
+                    if (melt(world, pos)) {
+                        melted++;
+                    }
+                }
+            }
+        }
+        if (!config.accumulationEnabled) {
+            return;
+        }
+        java.util.ArrayList<BlockPos> accumulableBare = new java.util.ArrayList<>();
+        for (BlockPos pos : barePositions) {
+            if (world.isRaining() && world.getBiome(pos).value().hasPrecipitation()
+                    && world.getBiome(pos).value().getTemperature() < config.warmBiomeTemperature
+                    && world.isSkyVisible(pos)) {
+                accumulableBare.add(pos);
+            }
+        }
+        if (!accumulableBare.isEmpty()) {
+            int done = 0;
+            for (BlockPos pos : accumulableBare) {
+                if (done >= Math.max(1, batchSize)) {
+                    break;
+                }
+                if (accumulate(world, pos)) {
+                    done++;
+                }
+            }
+            return;
+        }
+        int done = 0;
+        for (BlockPos pos : snowPositions) {
+            if (done >= Math.max(1, batchSize)) {
+                break;
+            }
+            if (!isSnowLayer(world.getBlockState(pos))) {
+                continue;
+            }
+            if (world.isRaining() && world.getBiome(pos).value().hasPrecipitation()
+                    && world.getBiome(pos).value().getTemperature() < config.warmBiomeTemperature
+                    && world.isSkyVisible(pos)) {
+                if (accumulate(world, pos)) {
+                    done++;
+                }
+            }
+        }
+    }
+
+    private static void sortByHeight(java.util.ArrayList<BlockPos> positions, java.util.ArrayList<Integer> heights) {
+        for (int i = 1; i < positions.size(); i++) {
+            BlockPos pos = positions.get(i);
+            int height = heights.get(i);
+            int j = i - 1;
+            while (j >= 0 && heights.get(j) > height) {
+                positions.set(j + 1, positions.get(j));
+                heights.set(j + 1, heights.get(j));
+                j--;
+            }
+            positions.set(j + 1, pos);
+            heights.set(j + 1, height);
+        }
     }
 
     public static void process(ServerWorld world, BlockPos pos) {

@@ -20,8 +20,10 @@ import org.slf4j.LoggerFactory;
  * block in one tick, and it does not vanish in one tick either.
  *
  * Processing is deliberately bounded. Every configured interval,
- * each player gets a small number of random samples in a radius
- * around them. Snow only matters where a player can see it, and
+ * each player gets a bounded batch of ground positions in a radius
+ * around them, processed blanket first and lowest surface first,
+ * so snow covers the ground evenly instead of appearing as random
+ * spots. Snow only matters where a player can see it, and
  * vanilla only ticks loaded chunks, so player-centred sampling
  * keeps the cost flat no matter how large the world gets. This is
  * also why the mod works on pre-generated chunks: it never relies
@@ -54,17 +56,10 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                 ServerWorld world = (ServerWorld) player.getEntityWorld();
                 BlockPos centre = player.getBlockPos();
                 int radius = Math.max(1, config.sampleRadius);
-                for (int i = 0; i < config.samplesPerPlayer; i++) {
-                    int x = centre.getX() + world.getRandom().nextInt(radius * 2 + 1) - radius;
-                    int z = centre.getZ() + world.getRandom().nextInt(radius * 2 + 1) - radius;
-                    int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, x, z);
-                    BlockPos surface = new BlockPos(x, topY, z);
-                    try {
-                        SnowProcessor.process(world, surface);
-                        SnowProcessor.process(world, surface.up());
-                    } catch (Exception e) {
-                        LOGGER.error("[Realistic Snow Physics] error processing snow at {}", surface, e);
-                    }
+                try {
+                    SnowProcessor.processArea(world, centre, radius, config.samplesPerPlayer);
+                } catch (Exception e) {
+                    LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }
             }
         });
