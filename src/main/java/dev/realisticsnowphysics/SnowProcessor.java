@@ -93,7 +93,7 @@ public final class SnowProcessor {
     }
 
     public static float effectiveTemperature(ServerWorld world, BlockPos pos) {
-        return world.getBiome(pos).value().getTemperature() + Seasons.temperatureOffset();
+        return world.getBiome(pos).value().getTemperature() + SeasonsHook.temperatureOffset();
     }
 
     public static double tickScale(ServerWorld world) {
@@ -112,8 +112,8 @@ public final class SnowProcessor {
                 && world.isSkyVisible(pos);
     }
 
-    public static boolean isWinterPrecipitation(ServerWorld world, BlockPos pos) {
-        if (!Seasons.isWinter()) {
+    public static boolean isForcedSnowPrecipitation(ServerWorld world, BlockPos pos) {
+        if (!SeasonsHook.forceSnowPrecipitation()) {
             return false;
         }
         return world.isRaining()
@@ -122,7 +122,7 @@ public final class SnowProcessor {
     }
 
     public static boolean canAccumulatePrecipitation(ServerWorld world, BlockPos pos) {
-        return isSnowing(world, pos) || isWinterPrecipitation(world, pos);
+        return isSnowing(world, pos) || isForcedSnowPrecipitation(world, pos);
     }
 
     private static boolean canHoldSnow(ServerWorld world, BlockPos below) {
@@ -189,8 +189,8 @@ public final class SnowProcessor {
         if (scale <= 0.0) {
             return;
         }
-        int accumulationBatch = Math.max(1, (int) Math.round(batchSize * Seasons.accumulationMultiplier() * scale));
-        int meltBatchScaled = Math.max(1, (int) Math.round(config.meltBatchSize * Seasons.meltMultiplier() * scale));
+        int accumulationBatch = Math.max(1, (int) Math.round(batchSize * SeasonsHook.accumulationMultiplier() * scale));
+        int meltBatchScaled = Math.max(1, (int) Math.round(config.meltBatchSize * SeasonsHook.meltMultiplier() * scale));
         java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
         java.util.ArrayList<Integer> snowHeights = new java.util.ArrayList<>();
