@@ -149,7 +149,7 @@ public final class SnowProcessor {
         BlockState state = level.getBlockState(pos);
 
         if (config.meltEnabled && (isSnowLayer(state) || isSnowBlock(state))) {
-            boolean warmDaylight = (level.getDayTime() % 24000L) < 12000L
+            boolean warmDaylight = level.isBrightOutside()
                     && level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature
                     && level.canSeeSky(pos);
             boolean heated = hasHeatNearby(level, pos, config.heatRadius);
