@@ -165,6 +165,10 @@ public final class SnowProcessor {
      * between random piles.
      */
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) {
+        processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>());
+    }
+
+    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
@@ -172,6 +176,10 @@ public final class SnowProcessor {
         java.util.ArrayList<Integer> bareHeights = new java.util.ArrayList<>();
         for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
             for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                long columnKey = ((long) x << 32) | (z & 0xffffffffL);
+                if (processedColumns.contains(columnKey)) {
+                    continue;
+                }
                 BlockPos surface = level.getHeightmapPos(
                         net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, new BlockPos(x, 0, z));
                 BlockPos snowPos = null;
@@ -203,6 +211,7 @@ public final class SnowProcessor {
                 if (melted >= Math.max(1, batchSize)) {
                     break;
                 }
+                processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
                 BlockState state = level.getBlockState(pos);
                 boolean warmDaylight = level.isBrightOutside()
                         && level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature
@@ -233,6 +242,7 @@ public final class SnowProcessor {
                 if (done >= Math.max(1, batchSize)) {
                     break;
                 }
+                processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
                 if (accumulate(level, pos)) {
                     done++;
                 }
@@ -245,6 +255,7 @@ public final class SnowProcessor {
             if (done >= Math.max(1, batchSize)) {
                 break;
             }
+            processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
             if (!isSnowLayer(level.getBlockState(pos))) {
                 continue;
             }
