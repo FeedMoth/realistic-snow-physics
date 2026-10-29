@@ -66,7 +66,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("realistic-snow-physics")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(source -> source.getEntity() == null || (source.getEntity() instanceof ServerPlayerEntity opPlayer && source.getServer().getPlayerManager().isOperator(new net.minecraft.server.PlayerConfigEntry(opPlayer.getGameProfile()))))
                     .then(CommandManager.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
