@@ -27,7 +27,7 @@ public final class RealisticSnowPhysicsConfig {
     public int processIntervalTicks = 20;
 
     /** Random positions sampled per player per pass. Keeps the cost bounded. */
-    public int samplesPerPlayer = 8;
+    public int samplesPerPlayer = 4;
 
     /** Horizontal radius around a player in which snow is processed. */
     public int sampleRadius = 48;
@@ -42,12 +42,12 @@ public final class RealisticSnowPhysicsConfig {
     public double meltChance = 0.5;
 
     /** Snow columns melted per pass. Melt is area-wide, so this is larger than accumulation. */
-    public int meltBatchSize = 48;
+    public int meltBatchSize = 16;
 
     /** Melt chance per column near heat, in warm daylight, and in cold sun, per pass. */
-    public double heatMeltChance = 0.8;
-    public double warmMeltChance = 0.6;
-    public double coldSunMeltChance = 0.08;
+    public double heatMeltChance = 0.6;
+    public double warmMeltChance = 0.4;
+    public double coldSunMeltChance = 0.05;
 
     /** How far heat is searched for, in blocks, in each direction. */
     public int heatRadius = 4;
