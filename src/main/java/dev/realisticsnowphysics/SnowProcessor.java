@@ -99,8 +99,24 @@ public final class SnowProcessor {
         return false;
     }
 
+    public static float effectiveTemperature(ServerLevel level, BlockPos pos) {
+        return level.getBiome(pos).value().getBaseTemperature() + Seasons.temperatureOffset();
+    }
+
+    public static double tickScale(ServerLevel level) {
+        try {
+            int speed = level.getGameRules().getInt(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED);
+            return speed <= 0 ? 0.0 : speed / 3.0;
+        } catch (Exception e) {
+            return 1.0;
+        }
+    }
+
     public static boolean isSnowing(ServerLevel level, BlockPos pos) {
-        return level.precipitationAt(pos) == net.minecraft.world.level.biome.Biome.Precipitation.SNOW;
+        return level.isRaining()
+                && level.canSeeSky(pos)
+                && level.getBiome(pos).value().hasPrecipitation()
+                && effectiveTemperature(level, pos) < 0.15f;
     }
 
     public static boolean isWinterPrecipitation(ServerLevel level, BlockPos pos) {
@@ -205,6 +221,12 @@ public final class SnowProcessor {
 
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        double scale = tickScale(level);
+        if (scale <= 0.0) {
+            return;
+        }
+        int accumulationBatch = Math.max(1, (int) Math.round(batchSize * Seasons.accumulationMultiplier() * scale));
+        int meltBatchScaled = Math.max(1, (int) Math.round(config.meltBatchSize * Seasons.meltMultiplier() * scale));
         java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
         java.util.ArrayList<Integer> snowHeights = new java.util.ArrayList<>();
@@ -242,7 +264,7 @@ public final class SnowProcessor {
         sortByHeight(barePositions, bareHeights);
         if (config.meltEnabled) {
             int melted = 0;
-            int meltBatch = Math.max(1, config.meltBatchSize);
+            int meltBatch = meltBatchScaled;
             for (BlockPos pos : snowPositions) {
                 if (melted >= meltBatch) {
                     break;
@@ -250,7 +272,7 @@ public final class SnowProcessor {
                 processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
                 BlockState state = level.getBlockState(pos);
                 boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
-                boolean warm = level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature;
+                boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
                 boolean heated = hasHeatNearby(level, pos, config.heatRadius);
                 double chance = 0.0;
                 if (heated) {
@@ -259,6 +281,9 @@ public final class SnowProcessor {
                     chance = config.warmMeltChance;
                 } else if (bright) {
                     chance = config.coldSunMeltChance;
+                }
+                if (isSnowBlock(level.getBlockState(pos))) {
+                    chance *= 0.5;
                 }
                 if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                     if (melt(level, pos)) {
@@ -280,7 +305,7 @@ public final class SnowProcessor {
         if (!accumulableBare.isEmpty()) {
             int done = 0;
             for (BlockPos pos : accumulableBare) {
-                if (done >= Math.max(1, batchSize)) {
+                if (done >= Math.max(1, accumulationBatch)) {
                     break;
                 }
                 processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
@@ -293,7 +318,7 @@ public final class SnowProcessor {
         // Nothing bare left that can take snow, so pile up, lowest first.
         int done = 0;
         for (BlockPos pos : snowPositions) {
-            if (done >= Math.max(1, batchSize)) {
+            if (done >= Math.max(1, accumulationBatch)) {
                 break;
             }
             processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
@@ -330,7 +355,7 @@ public final class SnowProcessor {
 
         if (config.meltEnabled && (isSnowLayer(state) || isSnowBlock(state))) {
             boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
-            boolean warm = level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature;
+            boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
             boolean heated = hasHeatNearby(level, pos, config.heatRadius);
             double chance = heated ? config.heatMeltChance : (bright && warm ? config.warmMeltChance : (bright ? config.coldSunMeltChance : 0.0));
             if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
