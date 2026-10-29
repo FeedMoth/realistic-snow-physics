@@ -8,7 +8,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.util.RandomSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,12 +19,14 @@ import org.slf4j.LoggerFactory;
  * block in one tick, and it does not vanish in one tick either.
  *
  * Processing is deliberately bounded. Every configured interval,
- * each player gets a small number of random samples in a radius
- * around them. Snow only matters where a player can see it, and
- * vanilla only ticks loaded chunks, so player-centred sampling
- * keeps the cost flat no matter how large the world gets. Empty
- * regions are simply left for the next time a player walks there,
- * which matches how the vanilla game already treats them.
+ * each player gets a bounded batch of ground positions in a radius
+ * around them, processed blanket first and lowest surface first,
+ * so snow covers the ground evenly instead of appearing as random
+ * spots. Snow only matters where a player can see it, and vanilla
+ * only ticks loaded chunks, so player-centred processing keeps the
+ * cost flat no matter how large the world gets. Empty regions are
+ * simply left for the next time a player walks there, which matches
+ * how the vanilla game already treats them.
  *
  * Runs on both sides: environment is "*", because the rules live
  * on the server side of a level, whether that level is a dedicated
@@ -51,28 +52,12 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             }
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 ServerLevel level = player.level();
-                RandomSource random = level.getRandom();
                 BlockPos centre = player.blockPosition();
                 int radius = Math.max(1, config.sampleRadius);
-                for (int i = 0; i < config.samplesPerPlayer; i++) {
-                    int x = centre.getX() + random.nextInt(radius * 2 + 1) - radius;
-                    int z = centre.getZ() + random.nextInt(radius * 2 + 1) - radius;
-                    // Start at the top of the world at that column and
-                    // walk down to the first non-air block. Snow lives
-                    // on the surface, so sampling the surface directly
-                    // is cheaper and more accurate than sampling
-                    // random heights and hoping to hit the ground.
-                    BlockPos surface = level.getHeightmapPos(
-                            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, new BlockPos(x, 0, z));
-                    // The surface block itself may be snow, which is
-                    // exactly what melt needs to see. Accumulation
-                    // needs the air just above it, so try both.
-                    try {
-                        SnowProcessor.process(level, surface);
-                        SnowProcessor.process(level, surface.above());
-                    } catch (Exception e) {
-                        LOGGER.error("[Realistic Snow Physics] error processing snow at {}", surface, e);
-                    }
+                try {
+                    SnowProcessor.processArea(level, centre, radius, config.samplesPerPlayer);
+                } catch (Exception e) {
+                    LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }
             }
         });

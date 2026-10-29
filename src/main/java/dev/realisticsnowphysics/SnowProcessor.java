@@ -22,6 +22,16 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * at a time, up to the configured maximum. A flat solid block gains
  * its first layer.
  *
+ * Blanket first, lowest first, then pile up. Snow does not appear
+ * as random spots with green ground between them. Each pass scans
+ * the ground around a player from the lowest surface upwards. If
+ * any ground in that area is still bare, that pass only puts a
+ * first layer on bare ground, lowest first. Only once every
+ * accumulable spot already has at least one layer does a pass
+ * start adding a second, third, and further layer, again lowest
+ * first. Valleys fill before ridges, and the ground is covered
+ * before it piles up, which is how a real snowfall looks.
+ *
  * Melt happens in two cases, and also one layer at a time. A heat
  * source nearby melts snow in any light, and warm daylight melts
  * snow in biomes at or above the configured temperature. A snow
@@ -141,6 +151,126 @@ public final class SnowProcessor {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Process the ground around a player in blanket order, lowest
+     * surface first. This is the accumulation path used by the tick
+     * handler. It scans every column in the radius, sorts by surface
+     * height, then melts a bounded batch, then either blankets bare
+     * ground or, if nothing is bare, piles up existing snow. The
+     * batch size is the configured samples-per-player value, so a
+     * full blanket takes a few minutes to form instead of appearing
+     * instantly, but it always forms evenly, with no green spots left
+     * between random piles.
+     */
+    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) {
+        RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
+        java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> snowHeights = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> bareHeights = new java.util.ArrayList<>();
+        for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
+            for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                BlockPos surface = level.getHeightmapPos(
+                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, new BlockPos(x, 0, z));
+                BlockPos snowPos = null;
+                if (isSnowLayer(level.getBlockState(surface)) || isSnowBlock(level.getBlockState(surface))) {
+                    snowPos = surface;
+                } else if (isSnowLayer(level.getBlockState(surface.above()))
+                        || isSnowBlock(level.getBlockState(surface.above()))) {
+                    snowPos = surface.above();
+                }
+                if (snowPos != null) {
+                    snowPositions.add(snowPos);
+                    snowHeights.add(snowPos.getY());
+                    continue;
+                }
+                BlockPos bare = surface.above();
+                if (level.getBlockState(bare).isAir() && canHoldSnow(level, surface)) {
+                    barePositions.add(bare);
+                    bareHeights.add(bare.getY());
+                }
+            }
+        }
+        // Sort both lists by height, lowest first. Sorting by index
+        // in parallel lists keeps this simple without a new record type.
+        sortByHeight(snowPositions, snowHeights);
+        sortByHeight(barePositions, bareHeights);
+        if (config.meltEnabled) {
+            int melted = 0;
+            for (BlockPos pos : snowPositions) {
+                if (melted >= Math.max(1, batchSize)) {
+                    break;
+                }
+                BlockState state = level.getBlockState(pos);
+                boolean warmDaylight = level.isBrightOutside()
+                        && level.getBiome(pos).value().getBaseTemperature() >= config.warmBiomeTemperature
+                        && level.canSeeSky(pos);
+                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
+                if ((warmDaylight || heated) && level.getRandom().nextDouble() < config.meltChance) {
+                    if (melt(level, pos)) {
+                        melted++;
+                    }
+                }
+            }
+        }
+        if (!config.accumulationEnabled) {
+            return;
+        }
+        // Bare ground wins: blanket first, no piling until covered.
+        java.util.ArrayList<BlockPos> accumulableBare = new java.util.ArrayList<>();
+        for (BlockPos pos : barePositions) {
+            if (level.isRainingAt(pos)
+                    && level.getBiome(pos).value().getBaseTemperature() < config.warmBiomeTemperature
+                    && level.canSeeSky(pos)) {
+                accumulableBare.add(pos);
+            }
+        }
+        if (!accumulableBare.isEmpty()) {
+            int done = 0;
+            for (BlockPos pos : accumulableBare) {
+                if (done >= Math.max(1, batchSize)) {
+                    break;
+                }
+                if (accumulate(level, pos)) {
+                    done++;
+                }
+            }
+            return;
+        }
+        // Nothing bare left that can take snow, so pile up, lowest first.
+        int done = 0;
+        for (BlockPos pos : snowPositions) {
+            if (done >= Math.max(1, batchSize)) {
+                break;
+            }
+            if (!isSnowLayer(level.getBlockState(pos))) {
+                continue;
+            }
+            if (level.isRainingAt(pos)
+                    && level.getBiome(pos).value().getBaseTemperature() < config.warmBiomeTemperature
+                    && level.canSeeSky(pos)) {
+                if (accumulate(level, pos)) {
+                    done++;
+                }
+            }
+        }
+    }
+
+    private static void sortByHeight(java.util.ArrayList<BlockPos> positions, java.util.ArrayList<Integer> heights) {
+        for (int i = 1; i < positions.size(); i++) {
+            BlockPos pos = positions.get(i);
+            int height = heights.get(i);
+            int j = i - 1;
+            while (j >= 0 && heights.get(j) > height) {
+                positions.set(j + 1, positions.get(j));
+                heights.set(j + 1, heights.get(j));
+                j--;
+            }
+            positions.set(j + 1, pos);
+            heights.set(j + 1, height);
+        }
     }
 
     /** Decide, for one sampled position, whether it should accumulate or melt. */
