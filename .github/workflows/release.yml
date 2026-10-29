@@ -1,0 +1,40 @@
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build
+        run: ./gradlew build
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d'=' -f2)
+          echo "Releasing $JAR for Minecraft $MC"
+          # Grouped releases: one tag per Minecraft family (for
+          # example v1.0.0-26.x) holds every jar in that family.
+          # Upload to the existing release if it is already there
+          # instead of deleting it and losing the other jars.
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" "$JAR" --clobber
+          else
+            gh release create "${{ github.ref_name }}" "$JAR" --title "Realistic Snow Physics ${{ github.ref_name }}" --notes "Realistic Snow Physics ${{ github.ref_name }} (Fabric). Grab the jar that matches your Minecraft version."
+          fi
