@@ -62,9 +62,6 @@ public final class RealisticSnowPhysicsConfig {
      */
     public float warmBiomeTemperature = 0.15f;
 
-    /** Season override for testing and for the seasons hook: auto, spring, summer, autumn, winter. */
-    public String season = "auto";
-
     private RealisticSnowPhysicsConfig() {
     }
 
@@ -91,8 +88,6 @@ public final class RealisticSnowPhysicsConfig {
                     instance = loaded;
                 }
                 RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] config loaded from {}", path);
-                Seasons.setConfigSeason(Seasons.Season.parse(instance.season));
-                Seasons.refreshFromFile();
             } else {
                 Files.createDirectories(path.getParent());
                 Files.writeString(path, GSON.toJson(instance));

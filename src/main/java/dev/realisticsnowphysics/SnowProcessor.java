@@ -19,10 +19,11 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * Accumulation only happens where snow is actually falling: the
  * precipitation at that position is snow, not rain, the position
  * has sky above it, and the ground below can hold snow. Rain in
- * a biome never makes snow. In winter, if a seasons system is
- * active, precipitation in any biome that has precipitation at
- * all can fall as snow, except deserts and other no-precipitation
- * biomes, which stay dry. A snow layer gains one layer
+ * a biome never makes snow. If a separate seasons mod is registered through SeasonsHook
+ * and forces snow precipitation, precipitation in any biome
+ * that has precipitation at all can fall as snow, except
+ * deserts and other no-precipitation biomes, which stay dry.
+ * On its own, Snow has no seasons and does not do this. A snow layer gains one layer
  * at a time, up to the configured maximum. A flat solid block gains
  * its first layer.
  *
@@ -100,7 +101,7 @@ public final class SnowProcessor {
     }
 
     public static float effectiveTemperature(ServerLevel level, BlockPos pos) {
-        return level.getBiome(pos).value().getBaseTemperature() + Seasons.temperatureOffset();
+        return level.getBiome(pos).value().getBaseTemperature() + SeasonsHook.temperatureOffset();
     }
 
     public static double tickScale(ServerLevel level) {
@@ -119,8 +120,8 @@ public final class SnowProcessor {
                 && effectiveTemperature(level, pos) < 0.15f;
     }
 
-    public static boolean isWinterPrecipitation(ServerLevel level, BlockPos pos) {
-        if (!Seasons.isWinter()) {
+    public static boolean isForcedSnowPrecipitation(ServerLevel level, BlockPos pos) {
+        if (!SeasonsHook.forceSnowPrecipitation()) {
             return false;
         }
         if (!level.isRaining() || !level.canSeeSky(pos)) {
@@ -130,7 +131,7 @@ public final class SnowProcessor {
     }
 
     public static boolean canAccumulatePrecipitation(ServerLevel level, BlockPos pos) {
-        return isSnowing(level, pos) || isWinterPrecipitation(level, pos);
+        return isSnowing(level, pos) || isForcedSnowPrecipitation(level, pos);
     }
 
     private static boolean canHoldSnow(ServerLevel level, BlockPos below) {
@@ -225,8 +226,8 @@ public final class SnowProcessor {
         if (scale <= 0.0) {
             return;
         }
-        int accumulationBatch = Math.max(1, (int) Math.round(batchSize * Seasons.accumulationMultiplier() * scale));
-        int meltBatchScaled = Math.max(1, (int) Math.round(config.meltBatchSize * Seasons.meltMultiplier() * scale));
+        int accumulationBatch = Math.max(1, (int) Math.round(batchSize * SeasonsHook.accumulationMultiplier() * scale));
+        int meltBatchScaled = Math.max(1, (int) Math.round(config.meltBatchSize * SeasonsHook.meltMultiplier() * scale));
         java.util.ArrayList<BlockPos> snowPositions = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> barePositions = new java.util.ArrayList<>();
         java.util.ArrayList<Integer> snowHeights = new java.util.ArrayList<>();
