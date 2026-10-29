@@ -19,7 +19,9 @@ import org.slf4j.LoggerFactory;
  * block in one tick, and it does not vanish in one tick either.
  *
  * Processing is deliberately bounded. Every configured interval,
- * each player gets a bounded batch of ground positions in a radius
+ * each player gets a bounded batch of ground positions in a radius,
+ * with columns already processed this tick by another player skipped,
+ * so nearby players do not stack snow or melt on the same ground
  * around them, processed blanket first and lowest surface first,
  * so snow covers the ground evenly instead of appearing as random
  * spots. Snow only matters where a player can see it, and vanilla
@@ -50,12 +52,14 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             if (server.getTickCount() % Math.max(1, config.processIntervalTicks) != 0) {
                 return;
             }
+            java.util.Map<ServerLevel, java.util.Set<Long>> processedByLevel = new java.util.HashMap<>();
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 ServerLevel level = player.level();
                 BlockPos centre = player.blockPosition();
                 int radius = Math.max(1, config.sampleRadius);
                 try {
-                    SnowProcessor.processArea(level, centre, radius, config.samplesPerPlayer);
+                    java.util.Set<Long> processed = processedByLevel.computeIfAbsent(level, k -> new java.util.HashSet<Long>());
+                    SnowProcessor.processArea(level, centre, radius, config.samplesPerPlayer, processed);
                 } catch (Exception e) {
                     LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }
