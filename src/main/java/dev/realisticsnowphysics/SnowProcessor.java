@@ -144,13 +144,13 @@ public final class SnowProcessor {
             }
             int diff = ny - groundY; totalDiff += diff; count++; if (diff > maxDiff) maxDiff = diff;
         }
-        int snowDepthLayers = 0; int snowBlocks = 0;
+        int snowDepthLayers = 0; int snowBlocks = 0; String topSnow = "none";
         for (int y = pos.getY() + 10; y >= groundY; y--) {
             BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
-            if (isSnowBlock(s)) { snowBlocks++; snowDepthLayers += 8; }
-            else if (isSnowLayer(s)) { snowDepthLayers += s.getValue(SnowLayerBlock.LAYERS); }
+            if (isSnowBlock(s)) { snowBlocks++; snowDepthLayers += 8; if (topSnow.equals("none")) topSnow = "block@" + y; }
+            else if (isSnowLayer(s)) { snowDepthLayers += s.getValue(SnowLayerBlock.LAYERS); if (topSnow.equals("none")) topSnow = "layers" + s.getValue(SnowLayerBlock.LAYERS) + "@" + y + " canSeeSky=" + level.canSeeSky(new BlockPos(pos.getX(), y, pos.getZ())) + " canAccum=" + canAccumulatePrecipitation(level, new BlockPos(pos.getX(), y, pos.getZ())) + " isValleyAtSnow=" + isValley(level, new BlockPos(pos.getX(), y, pos.getZ())); }
         }
-        return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos) + " snowDepthLayers=" + snowDepthLayers + " snowBlocks=" + snowBlocks;
+        return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos) + " snowDepthLayers=" + snowDepthLayers + " snowBlocks=" + snowBlocks + " topSnow=" + topSnow;
     }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
