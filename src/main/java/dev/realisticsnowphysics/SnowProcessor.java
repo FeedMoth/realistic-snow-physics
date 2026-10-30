@@ -49,7 +49,7 @@ public final class SnowProcessor {
     }
     public static double tickScale(ServerWorld level) {
         try {
-            int speed = level.getGameRules().getInt(net.minecraft.world.rule.GameRules.RANDOM_TICK_SPEED);
+            int speed = (Integer) level.getGameRules().getValue(net.minecraft.world.rule.GameRules.RANDOM_TICK_SPEED);
             return speed <= 0 ? 0.0 : speed / 3.0;
         } catch (Exception e) { return 1.0; }
     }
