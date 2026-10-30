@@ -88,22 +88,30 @@ public final class SnowProcessor {
         return state.isFaceSturdy(level, below, net.minecraft.core.Direction.UP);
     }
     public static boolean isValley(ServerLevel level, BlockPos pos) {
-        int groundY = pos.getY();
+        // Ground under this snow column, walking down through snow and plants
         BlockPos cursor = pos;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 6; i++) {
             BlockState below = level.getBlockState(cursor.below());
-            if (isSnow(below)) { cursor = cursor.below(); continue; }
-            groundY = cursor.below().getY(); break;
+            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.below(); continue; }
+            break;
         }
+        int groundY = cursor.below().getY();
         int higher = 0; int totalDiff = 0; int count = 0;
         for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
             if (dx == 0 && dz == 0) continue;
-            int ny = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, pos.getX() + dx, pos.getZ() + dz);
+            int nx = pos.getX() + dx; int nz = pos.getZ() + dz;
+            int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
+            int ny = topY;
+            for (int y = topY; y >= topY - 10; y--) {
+                BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
+                if (isSnow(s) || PlantStore.isPlant(s)) continue;
+                if (!s.isAir()) { ny = y; break; }
+            }
             int diff = ny - groundY;
-            if (diff >= 2) higher++;
+            if (diff >= 1) higher++;
             totalDiff += diff; count++;
         }
-        return higher >= 8 || (count > 0 && totalDiff / count >= 2);
+        return higher >= 12 || (count > 0 && totalDiff / count >= 1);
     }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
@@ -114,7 +122,7 @@ public final class SnowProcessor {
                 if (!isValley(level, pos)) return false;
                 int snowBlocksBelow = 0; BlockPos cursor = pos.below();
                 for (int i = 0; i < 3; i++) { if (isSnowBlock(level.getBlockState(cursor))) { snowBlocksBelow++; cursor = cursor.below(); } else break; }
-                if (snowBlocksBelow >= 2) return false;
+                if (snowBlocksBelow >= 3) return false;
                 level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 3); return true;
             }
             level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers + 1), 3); return true;
@@ -268,15 +276,11 @@ public final class SnowProcessor {
                 else if (leafPass && canAccumulateUnderLeaves(level, pos)) accumBare.add(pos);
             }
         }
-        if (!accumBare.isEmpty()) {
-            for (BlockPos pos : accumBare) {
-                BlockState s = level.getBlockState(pos);
-                if (PlantStore.isCrop(s)) continue;
-                // Do not replace grass blocks themselves, snow sits on top of grass, it does not turn grass into snow.
-                // Bare here is the air above grass, so accumulate() will place snow there, grass below stays grass.
-                accumulate(level, pos);
-            }
-            return;
+        for (BlockPos pos : accumBare) {
+            BlockState s = level.getBlockState(pos);
+            if (PlantStore.isCrop(s)) continue;
+            if (level.getRandom().nextDouble() < 0.15) continue;
+            accumulate(level, pos);
         }
         // No bare ground left, so pile up: every top snow column gets 1 more layer, all at once, lowest Y first.
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
@@ -285,6 +289,7 @@ public final class SnowProcessor {
             if (!canAccumulatePrecipitation(level, pos) && !(leafPass && canAccumulateUnderLeaves(level, pos))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
+            if (level.getRandom().nextDouble() < 0.15) continue;
             accumulate(level, pos);
         }
     }
