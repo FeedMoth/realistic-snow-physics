@@ -364,7 +364,7 @@ public final class SnowProcessor {
         // no batch cap, no random shuffle. If it is day and the
         // snow is not under a snow block, it melts one layer per
         // second. That is the whole rule.
-        if (config.meltEnabled && level.isBrightOutside()) {
+        if (config.meltEnabled) {
             for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
                 for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
                     for (int y = centre.getY() - 10; y <= centre.getY() + 10; y++) {
@@ -376,9 +376,7 @@ public final class SnowProcessor {
                         if (isSnowBlock(level.getBlockState(pos.above()))) {
                             continue;
                         }
-                        boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                        boolean bright = level.canSeeSky(pos);
-                        double chance = heated ? 1.0 : (bright ? 0.5 : 0.0);
+                        double chance = 1.0;
                         if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                             melt(level, pos);
                         }
