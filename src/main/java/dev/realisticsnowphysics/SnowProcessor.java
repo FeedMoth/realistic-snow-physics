@@ -174,9 +174,13 @@ public final class SnowProcessor {
                     if (isSnow(state)) { allSnow.add(pos); continue; }
                     if (!state.isAir()) {
                         if (PlantStore.isPlant(state)) {
-                            BlockPos below = pos.below();
+                            BlockPos lowest = pos;
+                            while (PlantStore.isPlant(level.getBlockState(lowest.below()))) {
+                                lowest = lowest.below();
+                            }
+                            BlockPos below = lowest.below();
                             if (canHoldSnow(level, below)) {
-                                byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(pos);
+                                byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(lowest);
                             }
                             break;
                         }
@@ -194,7 +198,7 @@ public final class SnowProcessor {
         // Snow can stack past 8 layers in a column. If a lower layer drops from 8 to 7 while a layer sits on it,
         // vanilla canSurvive fails for the upper layer, because its support is no longer full, and it breaks.
         // Melting only the top snow per pass avoids that: upper snow is gone before lower snow is reduced.
-        if (config.meltEnabled) {
+        if (config.meltEnabled && passCounter % 30 == 0) {
             boolean day = level.isBrightOutside();
             for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
                 for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
