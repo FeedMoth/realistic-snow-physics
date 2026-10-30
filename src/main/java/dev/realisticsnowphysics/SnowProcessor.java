@@ -233,12 +233,12 @@ public final class SnowProcessor {
         PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) return;
         // Accumulation: all at once, slowly, one layer per accumulation pass, grouped by Y level lowest first.
-        // One accumulation pass every 60 seconds: every bare ground column in the wide area gets 1 layer at the same time,
+        // One accumulation pass every 30 seconds: each layer spreads to every column in that one pass, with no stagger between neighbours, then a 30 second pause before the next layer. every bare ground column in the wide area gets 1 layer at the same time,
         // then next pass every existing snow column gets 1 more layer, also all at once.
         // This is not 16 random samples, and it does not pile one column up multiple times while others stay bare.
         // When a column gains a layer, columns below it in Y are in earlier Y groups and were already given that layer in the same pass,
         // because groups are processed lowest first and all groups are processed in one pass.
-        if (passCounter % 60 != 0) return;
+        if (passCounter % 30 != 0) return;
         // First, check if there is any bare ground that can snow. If yes, blanket all of it, one layer each, lowest Y first.
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
