@@ -152,42 +152,101 @@ public final class SnowProcessor {
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         if (!config.enabled) return;
-        // Melt: direct box, no heightmap, no scan list, no batch cap.
-        // Every snow_block and snow layer in the box melts, unless a snow_block is directly above it.
-        if (config.meltEnabled) {
-            for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
-                for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
-                    for (int y = centre.getY() - 10; y <= centre.getY() + 10; y++) {
-                        BlockPos pos = new BlockPos(x, y, z);
-                        BlockState state = level.getBlockState(pos);
-                        if (!isSnow(state)) continue;
-                        if (isSnowBlock(level.getBlockState(pos.above()))) continue;
-                        melt(level, pos);
+        double scale = tickScale(level);
+        if (scale <= 0.0) return;
+        // Collect snow and bare ground in a direct box, no heightmap trust.
+        // Melt list is every snow in the box. Accumulation lists are top snow and bare ground per column.
+        java.util.ArrayList<BlockPos> allSnow = new java.util.ArrayList<>();
+        java.util.ArrayList<BlockPos> topSnow = new java.util.ArrayList<>();
+        java.util.ArrayList<BlockPos> bare = new java.util.ArrayList<>();
+        for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
+            for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                boolean topFound = false;
+                for (int y = centre.getY() + 10; y >= centre.getY() - 10; y--) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (isSnow(state)) {
+                        allSnow.add(pos);
+                        if (!topFound) { topSnow.add(pos); topFound = true; }
+                        continue;
+                    }
+                    if (!topFound && !state.isAir()) {
+                        // Top solid is ground, not snow. Bare is the air/plant above it.
+                        BlockPos above = pos.above();
+                        BlockState aboveState = level.getBlockState(above);
+                        if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
+                            bare.add(above);
+                        }
+                        topFound = true;
                     }
                 }
             }
         }
-        // Accumulation: only on bare ground that can hold snow, only when snowing.
-        if (!config.accumulationEnabled) return;
-        for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
-            for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
-                // Find ground: top non-air in this column by direct scan down from centre+10 to centre-10, plus world surface fallback
-                int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
-                for (int y = Math.min(topY + 3, centre.getY() + 10); y >= centre.getY() - 10 && y >= level.getMinY(); y--) {
-                    BlockPos candidate = new BlockPos(x, y, z);
-                    BlockState cs = level.getBlockState(candidate);
-                    if (isSnow(cs)) break;
-                    if (!cs.isAir()) {
-                        BlockPos bare = candidate.above();
-                        if (canAccumulatePrecipitation(level, bare) && canHoldSnow(level, candidate) && (level.getBlockState(bare).isAir() || PlantStore.isPlant(level.getBlockState(bare)))) {
-                            accumulate(level, bare);
-                        }
-                        break;
+        // Melt, nearest first, realistic chances, no batch cap so it is actually visible.
+        // Heat melts fast, warm daylight melts steadily, cold sun melts slowly but surely.
+        // Snow under a snow block is sheltered and does not melt.
+        if (config.meltEnabled) {
+            allSnow.sort((a, b) -> Double.compare(a.distSqr(centre), b.distSqr(centre)));
+            for (BlockPos pos : allSnow) {
+                if (isSnowBlock(level.getBlockState(pos.above()))) continue;
+                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
+                boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
+                boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
+                double chance;
+                if (heated) chance = config.heatMeltChance;
+                else if (bright && warm) chance = config.warmMeltChance;
+                else if (bright) chance = config.coldSunMeltChance;
+                else chance = 0.0;
+                chance = chance * SeasonsHook.meltMultiplier() * scale;
+                if (chance > 0.0 && level.getRandom().nextDouble() < chance) melt(level, pos);
+            }
+        }
+        // Plant restoration: snow gone, not snowing, stored plant comes back, unless player planted something there.
+        for (BlockPos pos : bare) {
+            if (canAccumulatePrecipitation(level, pos)) continue;
+            if (!level.getBlockState(pos).isAir()) continue;
+            PlantStore.StoredPlant plant = PlantStore.take(level, pos);
+            if (plant != null) {
+                BlockState restored = PlantStore.restoreState(plant);
+                if (restored != null) {
+                    level.setBlock(pos, restored, 3);
+                    if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
+                        BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
+                        level.setBlock(pos.above(), upper, 3);
                     }
                 }
             }
         }
         PlantStore.saveIfDirty();
+        if (!config.accumulationEnabled) return;
+        // Accumulation, realistic and slow: blanket first, lowest first, then pile up.
+        // Rain never snows. Crops are never replaced, snow goes around them.
+        // Valleys can build past one block, flat ground caps at one block, then to a snow block in a valley.
+        int accBatch = Math.max(1, (int) Math.round(batchSize * SeasonsHook.accumulationMultiplier() * scale));
+        // Bare first
+        java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
+        for (BlockPos pos : bare) {
+            if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
+        }
+        accumBare.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
+        if (!accumBare.isEmpty()) {
+            int done = 0;
+            for (BlockPos pos : accumBare) {
+                if (done >= accBatch) break;
+                BlockState s = level.getBlockState(pos);
+                if (PlantStore.isCrop(s)) continue;
+                if (accumulate(level, pos)) done++;
+            }
+            return;
+        }
+        // No bare ground left that can snow, so pile up existing snow, lowest first.
+        topSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
+        int done = 0;
+        for (BlockPos pos : topSnow) {
+            if (done >= accBatch) break;
+            if (!canAccumulatePrecipitation(level, pos)) continue;
+            if (accumulate(level, pos)) done++;
+        }
     }
     public static void process(ServerLevel level, BlockPos pos) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
