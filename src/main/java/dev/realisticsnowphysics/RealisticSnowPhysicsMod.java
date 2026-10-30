@@ -83,11 +83,10 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                 for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
                                     for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
                                         int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
-                                        for (int y = topY + 3; y >= topY - 6 && y >= level.getMinY(); y--) {
+                                        for (int y = topY + 3; y >= level.getMinY() && y >= topY - 40; y--) {
                                             net.minecraft.world.level.block.state.BlockState st = level.getBlockState(new BlockPos(x, y, z));
-                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)) { blocks++; LOGGER.info("[Realistic Snow Physics] SCAN snow block at {} {} {}", x, y, z); break; }
-                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW)) { layers++; break; }
-                                            if (!st.isAir()) { break; }
+                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)) { blocks++; LOGGER.info("[Realistic Snow Physics] SCAN snow block at {} {} {}", x, y, z); }
+                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW)) { layers++; }
                                         }
                                     }
                                 }

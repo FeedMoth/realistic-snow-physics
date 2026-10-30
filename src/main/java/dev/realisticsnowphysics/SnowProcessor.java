@@ -327,25 +327,26 @@ public final class SnowProcessor {
                 // Top-down scan, not heightmap trust: find the topmost snow
                 // in this column, layer or full block, whatever the
                 // heightmap thinks the surface is. All snow melts, period.
+                // Full column scan: count EVERY snow block and layer
+                // in this column, not just the top one. A snow cube
+                // in a wall, under another block, or under a layer
+                // is still snow, and it still melts, unless a snow
+                // block is directly above it.
                 int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
-                BlockPos snowPos = null;
                 BlockPos groundPos = null;
-                for (int y = topY + 3; y >= topY - 6 && y >= level.getMinY(); y--) {
+                for (int y = topY + 3; y >= level.getMinY() && y >= topY - 40; y--) {
                     BlockPos candidate = new BlockPos(x, y, z);
                     BlockState candidateState = level.getBlockState(candidate);
                     if (isSnowLayer(candidateState) || isSnowBlock(candidateState)) {
-                        snowPos = candidate;
-                        break;
+                        if (!isSnowBlock(level.getBlockState(candidate.above()))) {
+                            snowPositions.add(candidate);
+                            snowHeights.add(candidate.getY());
+                        }
+                        continue;
                     }
-                    if (!candidateState.isAir()) {
+                    if (groundPos == null && !candidateState.isAir()) {
                         groundPos = candidate;
-                        break;
                     }
-                }
-                if (snowPos != null) {
-                    snowPositions.add(snowPos);
-                    snowHeights.add(snowPos.getY());
-                    continue;
                 }
                 if (groundPos == null) {
                     groundPos = new BlockPos(x, topY, z);
