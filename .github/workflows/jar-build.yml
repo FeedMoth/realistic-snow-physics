@@ -1,0 +1,23 @@
+name: jar-build
+on:
+  push:
+    tags:
+      - 'port-1.21.11-jar'
+permissions:
+  contents: write
+jobs:
+  jar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+      - run: chmod +x ./gradlew
+      - run: ./gradlew build
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
+          gh release create port-1.21.11-jar "$JAR" --title "port 1.21.11 test jar" --notes "test jar" || gh release upload port-1.21.11-jar "$JAR" --clobber

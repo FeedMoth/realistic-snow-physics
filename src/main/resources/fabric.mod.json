@@ -3,10 +3,10 @@
     "FeedMoth"
   ],
   "depends": {
+    "fabricloader": ">=0.16.0",
     "fabric-api": "*",
-    "fabricloader": ">=0.20.1",
-    "java": ">=25",
-    "minecraft": "~26.3"
+    "minecraft": "~1.21.11",
+    "java": ">=21"
   },
   "description": "Snow that builds up during snowfall and melts near heat and in warm daylight, layer by layer, instead of appearing and vanishing as a single block.",
   "entrypoints": {

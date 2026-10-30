@@ -1,13 +1,13 @@
 package dev.realisticsnowphysics.mixin;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.RandomSource;
-import net.minecraft.world.level.LevelReader;
-import net.minecraft.world.level.ScheduledTickAccess;
-import net.minecraft.world.level.block.state.BlockBehaviour;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.random.Random;
+import net.minecraft.world.WorldView;
+import net.minecraft.world.tick.ScheduledTickView;
+import net.minecraft.block.AbstractBlock;
+import net.minecraft.block.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,18 +17,18 @@ import dev.realisticsnowphysics.SnowProcessor;
 
 // Snow blocks have no canSurvive, unlike snow layers, so vanilla never
 // removes them when support is dug. Block itself does not declare updateShape
-// in 26.3, BlockBehaviour does, so the mixin targets BlockBehaviour. Previously they only fell on the
+// in 26.3, AbstractBlock does, so the mixin targets AbstractBlock. Previously they only fell on the
 // 5-second periodic scan, which is why blocks took a bit to fall while
 // layers fell immediately via the layer mixin. This mixin queues a snow
 // block the moment a neighbour update shows its support is air, same
 // tick as layers, without changing its return value or any other block.
-@Mixin(BlockBehaviour.class)
+@Mixin(AbstractBlock.class)
 public class SnowBlockMixin {
     @Inject(method = "updateShape", at = @At("RETURN"))
-    private void realisticSnowPhysics$onUpdateShape(BlockState state, LevelReader level, ScheduledTickAccess tick, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, RandomSource random, CallbackInfoReturnable<BlockState> cir) {
-        if (!(level instanceof ServerLevel sl)) return;
+    private void realisticSnowPhysics$onUpdateShape(BlockState state, WorldView level, ScheduledTickView tick, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, Random random, CallbackInfoReturnable<BlockState> cir) {
+        if (!(level instanceof ServerWorld sl)) return;
         if (!SnowProcessor.isSnowBlock(state)) return;
-        if (!sl.getBlockState(pos.below()).isAir()) return;
+        if (!sl.getBlockState(pos.down()).isAir()) return;
         FallingSnow.queue(sl, pos);
     }
 }

@@ -3,11 +3,11 @@ package dev.realisticsnowphysics;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.text.Text;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.network.ServerPlayerEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,22 +53,22 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         // periodic scan in the main handler below.
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (!RealisticSnowPhysicsConfig.get().enabled) return;
-            for (ServerLevel level : server.getAllLevels()) {
+            for (ServerWorld level : server.getWorlds()) {
                 try { FallingSnow.processQueue(level); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling queue", e); }
             }
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (!RealisticSnowPhysicsConfig.get().enabled) return;
-            java.util.List<ServerPlayer> players = server.getPlayerList().getPlayers();
+            java.util.List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
             if (players.isEmpty()) return;
-            ServerPlayer first = players.get(0);
+            ServerPlayerEntity first = players.get(0);
             // Async pipeline, server-side threads only: snapshot on the server
             // thread, decisions on a daemon worker thread, applies back on the
             // server thread in 20 ms batches. No client code, no client mod.
             // Legacy SnowProcessor.tickStaggered remains in the tree, unused
             // in this branch, as the synchronous fallback reference.
-            try { AsyncSnowPipeline.tick(first.level(), first.blockPosition(), server.getTickCount()); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error async snow", e); }
+            try { AsyncSnowPipeline.tick((ServerWorld) first.getEntityWorld(), first.getBlockPos(), server.getTicks()); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error async snow", e); }
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -76,17 +76,17 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             if (!config.enabled) {
                 return;
             }
-            if (server.getTickCount() % Math.max(1, config.processIntervalTicks) != 0) {
+            if (server.getTicks() % Math.max(1, config.processIntervalTicks) != 0) {
                 return;
             }
-            java.util.Map<ServerLevel, java.util.Set<Long>> processedByLevel = new java.util.HashMap<>();
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                ServerLevel level = player.level();
-                BlockPos centre = player.blockPosition();
+            java.util.Map<ServerWorld, java.util.Set<Long>> processedByLevel = new java.util.HashMap<>();
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                ServerWorld level = (ServerWorld) player.getEntityWorld();
+                BlockPos centre = player.getBlockPos();
                 int radius = Math.max(1, config.sampleRadius);
                 try {
                     java.util.Set<Long> processed = processedByLevel.computeIfAbsent(level, k -> new java.util.HashSet<Long>());
-                    if (server.getTickCount() % 100 == 0) { try { FallingSnow.process(level, centre); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling snow at {}", centre, e); } }
+                    if (server.getTicks() % 100 == 0) { try { FallingSnow.process(level, centre); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling snow at {}", centre, e); } }
                 } catch (Exception e) {
                     LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }
@@ -97,19 +97,19 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         // restart. It only re-reads the config file; it never
         // changes blocks by itself.
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(Commands.literal("realistic-snow-physics")
-                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                    .then(Commands.literal("scan")
+            dispatcher.register(CommandManager.literal("realistic-snow-physics")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("scan")
                             .executes(context -> {
-                                ServerPlayer player = context.getSource().getPlayerOrException();
-                                ServerLevel level = player.level();
-                                BlockPos centre = player.blockPosition();
+                                ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
+                                ServerWorld level = (ServerWorld) player.getEntityWorld();
+                                BlockPos centre = player.getBlockPos();
                                 int radius = RealisticSnowPhysicsConfig.get().sampleRadius;
                                 int blocks = 0, layers = 0;
                                 for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
                                     for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
                                         for (int y = centre.getY() - 10; y <= centre.getY() + 10; y++) {
-                                            net.minecraft.world.level.block.state.BlockState st = level.getBlockState(new BlockPos(x, y, z));
+                                            net.minecraft.block.BlockState st = level.getBlockState(new BlockPos(x, y, z));
                                             String id = SnowProcessor.blockId(st);
                                             if (id.equals("minecraft:snow_block")) { blocks++; }
                                             if (id.equals("minecraft:snow")) { layers++; }
@@ -117,35 +117,35 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                     }
                                 }
                                 int b = blocks, l = layers;
-                                context.getSource().sendSuccess(() -> Component.literal("Snow scan: " + b + " snow blocks, " + l + " snow layers in radius " + radius), false);
+                                context.getSource().sendFeedback(() -> Text.literal("Snow scan: " + b + " snow blocks, " + l + " snow layers in radius " + radius), false);
                                 return 1;
                             })));
-            dispatcher.register(Commands.literal("realistic-snow-physics")
-                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                    .then(Commands.literal("diagnose")
+            dispatcher.register(CommandManager.literal("realistic-snow-physics")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("diagnose")
                             .executes(context -> {
-                                ServerPlayer player = context.getSource().getPlayerOrException();
-                                ServerLevel level = player.level();
-                                BlockPos centre = player.blockPosition();
+                                ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
+                                ServerWorld level = (ServerWorld) player.getEntityWorld();
+                                BlockPos centre = player.getBlockPos();
                                 String diag = SnowProcessor.valleyDiagnose(level, centre);
-                                context.getSource().sendSuccess(() -> Component.literal("Snow diagnose at " + centre.getX() + "," + centre.getY() + "," + centre.getZ() + ": " + diag), false);
+                                context.getSource().sendFeedback(() -> Text.literal("Snow diagnose at " + centre.getX() + "," + centre.getY() + "," + centre.getZ() + ": " + diag), false);
                                 return 1;
                             })));
-            dispatcher.register(Commands.literal("realistic-snow-physics")
-                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                    .then(Commands.literal("async")
+            dispatcher.register(CommandManager.literal("realistic-snow-physics")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("async")
                             .executes(context -> {
-                                context.getSource().sendSuccess(() -> Component.literal("Realistic Snow Physics: " + AsyncSnowPipeline.status()), false);
+                                context.getSource().sendFeedback(() -> Text.literal("Realistic Snow Physics: " + AsyncSnowPipeline.status()), false);
                                 return 1;
                             })));
-            dispatcher.register(Commands.literal("realistic-snow-physics")
-                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                    .then(Commands.literal("reload")
+            dispatcher.register(CommandManager.literal("realistic-snow-physics")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
         PlantStore.load();
-                                context.getSource().sendSuccess(
-                                        () -> Component.literal("Realistic Snow Physics: config reloaded"),
+                                context.getSource().sendFeedback(
+                                        () -> Text.literal("Realistic Snow Physics: config reloaded"),
                                         false);
                                 return 1;
                             })));
