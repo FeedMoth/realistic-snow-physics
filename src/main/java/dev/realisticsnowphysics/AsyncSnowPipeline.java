@@ -60,8 +60,10 @@ import java.util.concurrent.Future;
  *    is skipped, neighbours within 2 blocks, from the initial
  *    top-snow map), the same max 8 layers, the same 8 snow-block
  *    valley cap, and crops exempt.
- * 3. APPLY, server thread, batched with a 20 ms time guard per
- *    tick. Each change is validated against the live block at
+ * 3. APPLY, server thread, staggered: 2 ms budget AND max 200 changes
+ *    per tick, flags 2 (clients only, no neighbour updates), change
+ *    list shuffled so each tick's batch is spread across the whole
+ *    radius instead of one area rising all at once. Each change is validated against the live block at
  *    that position (id and layer count must match the snapshot
  *    expectation); if a player, falling snow, or another system
  *    changed it since the snapshot, the change is skipped, never
@@ -128,10 +130,13 @@ public final class AsyncSnowPipeline {
     private static ServerLevel snapshotLevel;
     private static Snapshot snapshot;
     private static int snapshotBand;
-    private static final int BAND_COUNT = 120;
+    private static int snapX, snapZ, snapBandEndX;
+    private static final int BAND_COUNT = 320;
+    private static final int RADIUS = 256;
     private static Future<List<Change>> workerFuture;
     private static List<Change> pendingChanges;
     private static int applyIndex;
+    private static long lastCycleStart = -100000;
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "snow-async-worker");
         t.setDaemon(true);
@@ -200,18 +205,19 @@ public final class AsyncSnowPipeline {
         if (SnowProcessor.tickScale(level) <= 0.0) return;
         switch (state) {
             case IDLE -> {
-                if (tickCount % 600 != 0) return;
+                if (tickCount - lastCycleStart < 600) return;
                 snapshotLevel = level;
                 snapshot = new Snapshot();
                 snapshot.centre = centre.immutable();
-                snapshot.radius = 128;
+                snapshot.radius = RADIUS;
+                lastCycleStart = tickCount;
                 snapshot.cycleTick = tickCount;
                 snapshot.leafPass = (tickCount / 600) % 2 == 0;
                 snapshot.day = level.isBrightOutside();
                 snapshot.maxLayers = RealisticSnowPhysicsConfig.get().maxLayers;
                 snapshot.meltEnabled = RealisticSnowPhysicsConfig.get().meltEnabled;
                 snapshot.accumulationEnabled = RealisticSnowPhysicsConfig.get().accumulationEnabled;
-                snapshotBand = 0;
+                snapshotBand = 0; snapX = snapshot.centre.getX() - RADIUS - 6; snapZ = snapshot.centre.getZ() - RADIUS - 6; snapBandEndX = snapX + ((RADIUS + 6) * 2 + 1 + BAND_COUNT - 1) / BAND_COUNT - 1;
                 state = State.SNAPSHOT;
             }
             case SNAPSHOT -> snapshotBand(level);
@@ -231,87 +237,109 @@ public final class AsyncSnowPipeline {
         }
     }
 
-    /** Server thread only: one snapshot band per tick. */
+    /** Server thread only: snapshot, time-budgeted and resumable.
+     * One band is 2 columns wide (320 bands for radius 256). A band is
+     * processed column by column until 2 ms elapse, then resumed next
+     * tick from snapX/snapZ, so no single tick ever does a whole band
+     * at once. At tick 500 (2 ms per tick) this is the difference
+     * between a smooth run and a Can't keep up warning. */
     private static void snapshotBand(ServerLevel level) {
         if (snapshot == null || snapshotLevel != level) { state = State.IDLE; return; }
+        long startNanos = System.nanoTime();
         int radius = snapshot.radius;
         int border = 6;
         int totalWidth = (radius + border) * 2 + 1;
         int bandWidth = (totalWidth + BAND_COUNT - 1) / BAND_COUNT;
-        int xStart = snapshot.centre.getX() - radius - border + snapshotBand * bandWidth;
-        int xEnd = Math.min(snapshot.centre.getX() + radius + border, xStart + bandWidth - 1);
-        snapshotBand++;
         float tempOffset = SeasonsHook.temperatureOffset();
         boolean forceSnow = SeasonsHook.forceSnowPrecipitation();
         int heatRadius = RealisticSnowPhysicsConfig.get().heatRadius;
         Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunkCache = new HashMap<>();
-        for (int x = xStart; x <= xEnd; x++) {
-            for (int z = snapshot.centre.getZ() - radius - border; z <= snapshot.centre.getZ() + radius + border; z++) {
-                if (!level.isLoaded(new BlockPos(x, snapshot.centre.getY(), z))) continue;
-                long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
-                net.minecraft.world.level.chunk.LevelChunk chunk = chunkCache.get(chunkKey);
-                if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
-                int topY = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
-                // Valley ground: first solid below topY, skipping snow, plants, air, leaves, top 10.
-                int valleyGround = topY;
-                for (int y = topY; y >= topY - 10 && y >= level.getMinY(); y--) {
-                    BlockState s = chunk.getBlockState(new BlockPos(x, y, z));
-                    String sid = idOf(s);
-                    if (SnowProcessor.isSnow(s) || isPlantId(sid) || s.isAir() || isLeavesId(sid)) continue;
-                    valleyGround = y; break;
+        while (snapshotBand < BAND_COUNT) {
+            if (snapX > snapBandEndX) {
+                snapshotBand++;
+                if (snapshotBand >= BAND_COUNT) break;
+                int bx = snapshot.centre.getX() - radius - border + snapshotBand * bandWidth;
+                snapX = bx; snapBandEndX = Math.min(snapshot.centre.getX() + radius + border, bx + bandWidth - 1);
+                snapZ = snapshot.centre.getZ() - radius - border;
+            }
+            int x = snapX;
+            int z = snapZ;
+            // advance to next column for next iteration, before processing
+            snapZ++;
+            if (snapZ > snapshot.centre.getZ() + radius + border) { snapZ = snapshot.centre.getZ() - radius - border; snapX++; }
+            if (!level.isLoaded(new BlockPos(x, snapshot.centre.getY(), z))) {
+                if (System.nanoTime() - startNanos > 2_000_000L) return;
+                continue;
+            }
+            long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
+            net.minecraft.world.level.chunk.LevelChunk chunk = chunkCache.get(chunkKey);
+            if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
+            int topY = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+            int valleyGround = topY;
+            for (int y = topY; y >= topY - 10 && y >= level.getMinY(); y--) {
+                BlockState s = chunk.getBlockState(new BlockPos(x, y, z));
+                String sid = idOf(s);
+                if (SnowProcessor.isSnow(s) || isPlantId(sid) || s.isAir() || isLeavesId(sid)) continue;
+                valleyGround = y; break;
+            }
+            snapshot.groundY.put(colKey(x, z), valleyGround);
+            if (Math.abs(x - snapshot.centre.getX()) > radius || Math.abs(z - snapshot.centre.getZ()) > radius) {
+                if (System.nanoTime() - startNanos > 2_000_000L) return;
+                continue;
+            }
+            // Per-column biome/snowing, computed once, not per snow record.
+            BlockPos colPos = new BlockPos(x, topY, z);
+            boolean colSnowing = snowingInBiomeAt(level, colPos, tempOffset, forceSnow);
+            boolean leafAbove = false;
+            for (int y = topY + 3; y >= topY - 40 && y >= level.getMinY(); y--) {
+                BlockPos pos = new BlockPos(x, y, z);
+                BlockState s = chunk.getBlockState(pos);
+                if (SnowProcessor.isSnow(s)) {
+                    SnowRec rec = new SnowRec();
+                    rec.x = x; rec.y = y; rec.z = z;
+                    rec.isBlock = SnowProcessor.isSnowBlock(s);
+                    rec.layers = rec.isBlock ? 8 : s.getValue(SnowLayerBlock.LAYERS);
+                    rec.leafCovered = leafAbove;
+                    rec.snowingInBiome = colSnowing;
+                    rec.heated = false;
+                    if (level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos) > 0) {
+                        rec.heated = SnowProcessor.hasHeatNearby(level, pos, heatRadius);
+                    }
+                    PlantStore.StoredPlant stored = PlantStore.peek(level, pos);
+                    rec.storedPlantId = stored == null ? null : stored.block;
+                    snapshot.snows.add(rec);
+                    continue;
                 }
-                snapshot.groundY.put(colKey(x, z), valleyGround);
-                if (Math.abs(x - snapshot.centre.getX()) > radius || Math.abs(z - snapshot.centre.getZ()) > radius) continue;
-                boolean leafAbove = false;
-                for (int y = topY + 3; y >= topY - 40 && y >= level.getMinY(); y--) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    BlockState s = chunk.getBlockState(pos);
-                    if (SnowProcessor.isSnow(s)) {
-                        SnowRec rec = new SnowRec();
-                        rec.x = x; rec.y = y; rec.z = z;
-                        rec.isBlock = SnowProcessor.isSnowBlock(s);
-                        rec.layers = rec.isBlock ? 8 : s.getValue(SnowLayerBlock.LAYERS);
-                        rec.leafCovered = leafAbove;
-                        rec.snowingInBiome = snowingInBiomeAt(level, pos, tempOffset, forceSnow);
-                        rec.heated = false;
-                        if (level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos) > 0) {
-                            rec.heated = SnowProcessor.hasHeatNearby(level, pos, heatRadius);
-                        }
-                        PlantStore.StoredPlant stored = PlantStore.peek(level, pos);
-                        rec.storedPlantId = stored == null ? null : stored.block;
-                        snapshot.snows.add(rec);
-                        continue;
-                    }
-                    if (s.isAir()) continue;
-                    String sid = idOf(s);
-                    if (isLeavesId(sid)) {
-                        leafAbove = true;
-                        BlockPos above = pos.above();
-                        if (chunk.getBlockState(above).isAir() && canHoldSnowAt(level, pos)) {
-                            BareRec b = bareRec(level, above, pos.getY(), leafAbove, tempOffset, forceSnow);
-                            snapshot.bares.add(b);
-                        }
-                        continue;
-                    }
-                    if (isPlantId(sid)) {
-                        BlockPos lowest = pos;
-                        while (isPlantId(idOf(chunk.getBlockState(lowest.below())))) lowest = lowest.below();
-                        BlockPos below = lowest.below();
-                        if (canHoldSnowAt(level, below)) {
-                            BareRec b = bareRec(level, lowest, below.getY(), leafAbove, tempOffset, forceSnow);
-                            snapshot.bares.add(b);
-                        }
-                        break;
-                    }
+                if (s.isAir()) continue;
+                String sid = idOf(s);
+                if (isLeavesId(sid)) {
+                    leafAbove = true;
                     BlockPos above = pos.above();
-                    BlockState aboveState = chunk.getBlockState(above);
-                    if ((aboveState.isAir() || isPlantId(idOf(aboveState))) && canHoldSnowAt(level, pos)) {
+                    if (chunk.getBlockState(above).isAir() && canHoldSnowAt(level, pos)) {
                         BareRec b = bareRec(level, above, pos.getY(), leafAbove, tempOffset, forceSnow);
+                        snapshot.bares.add(b);
+                    }
+                    continue;
+                }
+                if (isPlantId(sid)) {
+                    BlockPos lowest = pos;
+                    while (isPlantId(idOf(chunk.getBlockState(lowest.below())))) lowest = lowest.below();
+                    BlockPos below = lowest.below();
+                    if (canHoldSnowAt(level, below)) {
+                        BareRec b = bareRec(level, lowest, below.getY(), leafAbove, tempOffset, forceSnow);
                         snapshot.bares.add(b);
                     }
                     break;
                 }
+                BlockPos above = pos.above();
+                BlockState aboveState = chunk.getBlockState(above);
+                if ((aboveState.isAir() || isPlantId(idOf(aboveState))) && canHoldSnowAt(level, pos)) {
+                    BareRec b = bareRec(level, above, pos.getY(), leafAbove, tempOffset, forceSnow);
+                    snapshot.bares.add(b);
+                }
+                break;
             }
+            if (System.nanoTime() - startNanos > 2_000_000L) return;
         }
         if (snapshotBand >= BAND_COUNT) {
             Snapshot done = snapshot;
@@ -459,6 +487,7 @@ public final class AsyncSnowPipeline {
             if (rng.nextDouble() < 0.15) continue;
             accumulateWorker(out, kind, layers, plantIdAt, storedAt, r.x, r.y, r.z, snap, rng);
         }
+        java.util.Collections.shuffle(out, new java.util.Random(snap.cycleTick));
         return out;
     }
 
@@ -538,12 +567,15 @@ public final class AsyncSnowPipeline {
         out.add(c); kind.put(k, 2); layers.put(k, 1);
     }
 
-    // ---- Server thread only: batched apply, 20 ms guard ----
+    // ---- Server thread only: staggered apply, 2 ms AND 200 changes per tick ----
     private static void applyBatch(ServerLevel level) {
         if (pendingChanges == null || snapshotLevel != level) { state = State.IDLE; return; }
         long start = System.nanoTime();
+        int appliedThisTick = 0;
         while (applyIndex < pendingChanges.size()) {
-            if (System.nanoTime() - start > 20_000_000L) return; // resume next tick, under 20 ms
+            if (appliedThisTick >= 200) return;
+            if (System.nanoTime() - start > 2_000_000L) return; // resume next tick, under 2 ms
+            appliedThisTick++;
             Change c = pendingChanges.get(applyIndex++);
             BlockPos pos = new BlockPos(c.x, c.y, c.z);
             try { applyOne(level, pos, c); } catch (Exception e) {
@@ -568,18 +600,18 @@ public final class AsyncSnowPipeline {
         if (c.expectedLayers >= 0 && current.hasProperty(SnowLayerBlock.LAYERS)
             && current.getValue(SnowLayerBlock.LAYERS) != c.expectedLayers) return;
         switch (c.kind) {
-            case SET_LAYER -> level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, c.layers), 3);
-            case SET_BLOCK -> level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 3);
-            case SET_AIR -> level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+            case SET_LAYER -> level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, c.layers), 2);
+            case SET_BLOCK -> level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 2);
+            case SET_AIR -> level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
             case RESTORE_PLANT -> {
                 PlantStore.StoredPlant plant = PlantStore.take(level, pos);
-                if (plant == null) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3); return; }
+                if (plant == null) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2); return; }
                 BlockState restored = PlantStore.restoreState(plant);
-                if (restored == null) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3); return; }
-                level.setBlock(pos, restored, 3);
+                if (restored == null) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2); return; }
+                level.setBlock(pos, restored, 2);
                 if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
                     BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.UPPER);
-                    level.setBlock(pos.above(), upper, 3);
+                    level.setBlock(pos.above(), upper, 2);
                 }
                 PlantStore.saveIfDirty();
             }
@@ -588,8 +620,8 @@ public final class AsyncSnowPipeline {
                 if (plantBlock != null && plantBlock != Blocks.AIR) {
                     PlantStore.store(level, pos, plantBlock.defaultBlockState());
                 }
-                if (c.kind == SET_LAYER_AND_AIR_ABOVE) level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3);
-                level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, 1), 3);
+                if (c.kind == SET_LAYER_AND_AIR_ABOVE) level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 2);
+                level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, 1), 2);
             }
         }
     }
