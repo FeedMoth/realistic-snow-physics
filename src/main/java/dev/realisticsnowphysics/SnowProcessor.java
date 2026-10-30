@@ -356,7 +356,8 @@ public final class SnowProcessor {
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
         allSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
         for (BlockPos pos : allSnow) {
-            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)))) continue;
+            if (!isSnowingInBiome(level, pos) && !(leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)))) continue;
+            if (!isSnowingInBiome(level, pos)) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
             if (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)) {
