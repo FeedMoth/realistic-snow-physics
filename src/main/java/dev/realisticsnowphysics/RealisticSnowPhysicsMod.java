@@ -96,6 +96,17 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                             })));
             dispatcher.register(Commands.literal("realistic-snow-physics")
                     .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                    .then(Commands.literal("diagnose")
+                            .executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayerOrException();
+                                ServerLevel level = player.level();
+                                BlockPos centre = player.blockPosition();
+                                String diag = SnowProcessor.valleyDiagnose(level, centre);
+                                context.getSource().sendSuccess(() -> Component.literal("Snow diagnose at " + centre.getX() + "," + centre.getY() + "," + centre.getZ() + ": " + diag), false);
+                                return 1;
+                            })));
+            dispatcher.register(Commands.literal("realistic-snow-physics")
+                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
                     .then(Commands.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();

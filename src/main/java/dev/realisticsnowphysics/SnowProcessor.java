@@ -121,6 +121,31 @@ public final class SnowProcessor {
         // Old avg>=1 rule failed for small pits and wide valley floors, where most neighbours are flat and only walls are higher.
         return maxDiff >= 1 && totalDiff >= 0;
     }
+    public static String valleyDiagnose(ServerLevel level, BlockPos pos) {
+        BlockPos cursor = pos;
+        for (int i = 0; i < 6; i++) {
+            BlockState below = level.getBlockState(cursor.below());
+            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.below(); continue; }
+            break;
+        }
+        int groundY = cursor.below().getY();
+        int maxDiff = -100; int totalDiff = 0; int count = 0;
+        for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
+            if (dx == 0 && dz == 0) continue;
+            int nx = pos.getX() + dx; int nz = pos.getZ() + dz;
+            int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
+            int ny = topY;
+            for (int y = topY; y >= topY - 10; y--) {
+                BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
+                if (isSnow(s) || PlantStore.isPlant(s)) continue;
+                if (s.isAir()) continue;
+                if (blockId(s).endsWith("_leaves")) continue;
+                ny = y; break;
+            }
+            int diff = ny - groundY; totalDiff += diff; count++; if (diff > maxDiff) maxDiff = diff;
+        }
+        return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos);
+    }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (isSnowLayer(state)) {
@@ -328,7 +353,7 @@ public final class SnowProcessor {
             if (!canAccumulatePrecipitation(level, pos) && !(leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
-            if (leafCoveredSet.contains(pos.asLong())) {
+            if (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)) {
                 BlockState st = level.getBlockState(pos);
                 if (isSnowBlock(st)) continue;
                 if (isSnowLayer(st) && st.getValue(SnowLayerBlock.LAYERS) >= 8) continue;
