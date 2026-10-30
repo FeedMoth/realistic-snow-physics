@@ -2,7 +2,7 @@ name: jar-build
 on:
   push:
     tags:
-      - 'jar-263o'
+      - 'jar-263p'
 permissions:
   contents: write
 jobs:
@@ -16,5 +16,7 @@ jobs:
       - run: ./gradlew build
       - env: {GH_TOKEN: ${{ github.token }}}
         run: |
+          ls build/libs/
           JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
-          gh release create jar-263o "$JAR" --title "jar scan build" --notes "test jar" || gh release upload jar-263o "$JAR" --clobber
+          echo "JAR=$JAR"
+          gh release create jar-263p "$JAR" --title "jar scan topY fix" --notes "test jar"

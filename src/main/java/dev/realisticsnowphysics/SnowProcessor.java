@@ -330,7 +330,7 @@ public final class SnowProcessor {
                 int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
                 BlockPos snowPos = null;
                 BlockPos groundPos = null;
-                for (int y = topY; y >= topY - 6 && y >= level.getMinY(); y--) {
+                for (int y = topY + 3; y >= topY - 6 && y >= level.getMinY(); y--) {
                     BlockPos candidate = new BlockPos(x, y, z);
                     BlockState candidateState = level.getBlockState(candidate);
                     if (isSnowLayer(candidateState) || isSnowBlock(candidateState)) {
