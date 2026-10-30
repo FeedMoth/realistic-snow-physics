@@ -92,8 +92,8 @@ public final class PlantStore {
         return dimension + "|" + x + "|" + y + "|" + z;
     }
 
-    private static String dimensionOf(Level level) {
-        ResourceKey<Level> key = level.dimension();
+    private static String dimensionOf(World level) {
+        RegistryKey<World> key = level.getRegistryKey();
         return key == null ? "minecraft:overworld" : key.getValue().toString();
     }
 
@@ -150,7 +150,7 @@ public final class PlantStore {
                 || id.equals("minecraft:rose_bush") || id.equals("minecraft:peony");
     }
 
-    public static synchronized void store(Level level, BlockPos pos, BlockState state) {
+    public static synchronized void store(World level, BlockPos pos, BlockState state) {
         load();
         StoredPlant plant = new StoredPlant();
         plant.dimension = dimensionOf(level);
@@ -166,7 +166,7 @@ public final class PlantStore {
         dirty = true;
     }
 
-    public static synchronized StoredPlant take(Level level, BlockPos pos) {
+    public static synchronized StoredPlant take(World level, BlockPos pos) {
         load();
         StoredPlant plant = PLANTS.remove(key(dimensionOf(level), pos.getX(), pos.getY(), pos.getZ()));
         if (plant != null) {
@@ -175,7 +175,7 @@ public final class PlantStore {
         return plant;
     }
 
-    public static synchronized StoredPlant peek(Level level, BlockPos pos) {
+    public static synchronized StoredPlant peek(World level, BlockPos pos) {
         load();
         return PLANTS.get(key(dimensionOf(level), pos.getX(), pos.getY(), pos.getZ()));
     }

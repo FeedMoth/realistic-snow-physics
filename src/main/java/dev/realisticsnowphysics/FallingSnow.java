@@ -27,7 +27,7 @@ public final class FallingSnow {
         // seeing air all the way down, teleported straight to the ground
         // while the middle blocks were still falling as entities, and
         // those entities then tried to land on the layer and broke.
-        for (int y = pos.getY(); y <= level.getTopY(); y++) {
+        for (int y = pos.getY(); y <= level.getTopYInclusive(); y++) {
             BlockPos cand = new BlockPos(pos.getX(), y, pos.getZ());
             if (!SnowProcessor.isSnow(level.getBlockState(cand))) break;
             queueOne(level, cand);
@@ -38,7 +38,7 @@ public final class FallingSnow {
     private static boolean hasFallingEntityBelow(ServerWorld level, BlockPos pos) {
         for (FallingBlockEntity e : level.getEntitiesByClass(FallingBlockEntity.class,
                 new net.minecraft.util.math.Box(pos.getX(), level.getBottomY(), pos.getZ(),
-                        pos.getX() + 1, pos.getY(), pos.getZ() + 1))) {
+                        pos.getX() + 1, pos.getY(), pos.getZ() + 1), e -> true)) {
             if (SnowProcessor.isSnow(e.getBlockState())) return true;
         }
         return false;

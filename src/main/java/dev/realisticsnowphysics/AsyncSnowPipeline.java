@@ -274,7 +274,7 @@ public final class AsyncSnowPipeline {
             long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
             net.minecraft.world.chunk.WorldChunk chunk = chunkCache.get(chunkKey);
             if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
-            int topY = chunk.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
+            int topY = level.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
             int valleyGround = topY;
             for (int y = topY; y >= topY - 10 && y >= level.getBottomY(); y--) {
                 BlockState s = chunk.getBlockState(new BlockPos(x, y, z));

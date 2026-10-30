@@ -98,7 +98,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         // changes blocks by itself.
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("realistic-snow-physics")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(source -> source.getEntity() == null || (source.getEntity() instanceof ServerPlayerEntity opPlayer && source.getServer().getPlayerManager().isOperator(new net.minecraft.server.PlayerConfigEntry(opPlayer.getGameProfile()))))
                     .then(CommandManager.literal("scan")
                             .executes(context -> {
                                 ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
@@ -121,7 +121,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                 return 1;
                             })));
             dispatcher.register(CommandManager.literal("realistic-snow-physics")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(source -> source.getEntity() == null || (source.getEntity() instanceof ServerPlayerEntity opPlayer && source.getServer().getPlayerManager().isOperator(new net.minecraft.server.PlayerConfigEntry(opPlayer.getGameProfile()))))
                     .then(CommandManager.literal("diagnose")
                             .executes(context -> {
                                 ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
@@ -132,14 +132,14 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                 return 1;
                             })));
             dispatcher.register(CommandManager.literal("realistic-snow-physics")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(source -> source.getEntity() == null || (source.getEntity() instanceof ServerPlayerEntity opPlayer && source.getServer().getPlayerManager().isOperator(new net.minecraft.server.PlayerConfigEntry(opPlayer.getGameProfile()))))
                     .then(CommandManager.literal("async")
                             .executes(context -> {
                                 context.getSource().sendFeedback(() -> Text.literal("Realistic Snow Physics: " + AsyncSnowPipeline.status()), false);
                                 return 1;
                             })));
             dispatcher.register(CommandManager.literal("realistic-snow-physics")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(source -> source.getEntity() == null || (source.getEntity() instanceof ServerPlayerEntity opPlayer && source.getServer().getPlayerManager().isOperator(new net.minecraft.server.PlayerConfigEntry(opPlayer.getGameProfile()))))
                     .then(CommandManager.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();

@@ -50,7 +50,7 @@ public class SnowLayerBlockMixin {
     // queue move it down immediately, preserving layers. Placement is
     // unchanged, because this only intercepts a removal that already
     // happened, it does not change canSurvive for placement.
-    @Inject(method = "updateShape", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getStateForNeighborUpdate", at = @At("RETURN"), cancellable = true)
     private void realisticSnowPhysics$onUpdateShape(BlockState state, WorldView level, ScheduledTickView tick, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, Random random, CallbackInfoReturnable<BlockState> cir) {
         if (!cir.getReturnValue().isAir()) return;
         if (!(level instanceof ServerWorld sl)) return;

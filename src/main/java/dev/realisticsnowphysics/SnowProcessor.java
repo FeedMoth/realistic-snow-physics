@@ -49,7 +49,7 @@ public final class SnowProcessor {
     }
     public static double tickScale(ServerWorld level) {
         try {
-            int speed = level.getGameRules().getInt(net.minecraft.world.GameRules.RANDOM_TICK_SPEED);
+            int speed = level.getGameRules().getInt(net.minecraft.world.rule.GameRules.RANDOM_TICK_SPEED);
             return speed <= 0 ? 0.0 : speed / 3.0;
         } catch (Exception e) { return 1.0; }
     }
@@ -284,7 +284,7 @@ public final class SnowProcessor {
                 long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
                 net.minecraft.world.chunk.WorldChunk chunk = chunkCache.get(chunkKey);
                 if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
-                int topY = chunk.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
+                int topY = level.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
                 // Scan down from top to find ground and snow in this column, within a reasonable band around the player and terrain.
                 // Use topY as terrain height, not player Y, so hills and valleys are both covered.
                 boolean leafAbove = false;
@@ -396,7 +396,7 @@ public final class SnowProcessor {
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
         boolean leafPass = (staggeredCycleTick >= 0 && (staggeredCycleTick / 600) % 2 == 0);
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
-            for (BlockPos pos : e.get()) {
+            for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
                 else if (leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos))) accumBare.add(pos);
             }

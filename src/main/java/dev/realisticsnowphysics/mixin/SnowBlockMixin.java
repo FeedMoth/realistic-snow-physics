@@ -24,7 +24,7 @@ import dev.realisticsnowphysics.SnowProcessor;
 // tick as layers, without changing its return value or any other block.
 @Mixin(AbstractBlock.class)
 public class SnowBlockMixin {
-    @Inject(method = "updateShape", at = @At("RETURN"))
+    @Inject(method = "getStateForNeighborUpdate", at = @At("RETURN"))
     private void realisticSnowPhysics$onUpdateShape(BlockState state, WorldView level, ScheduledTickView tick, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, Random random, CallbackInfoReturnable<BlockState> cir) {
         if (!(level instanceof ServerWorld sl)) return;
         if (!SnowProcessor.isSnowBlock(state)) return;
