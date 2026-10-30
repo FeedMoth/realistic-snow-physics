@@ -173,7 +173,13 @@ public final class SnowProcessor {
                     BlockState state = level.getBlockState(pos);
                     if (isSnow(state)) { allSnow.add(pos); continue; }
                     if (!state.isAir()) {
-                        // This is ground, unless it is above snow already counted. Record its Y group.
+                        if (PlantStore.isPlant(state)) {
+                            BlockPos below = pos.below();
+                            if (canHoldSnow(level, below)) {
+                                byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(pos);
+                            }
+                            break;
+                        }
                         BlockPos above = pos.above();
                         BlockState aboveState = level.getBlockState(above);
                         if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
@@ -184,17 +190,25 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Melt, remade: daytime, not snowing, every pass, one step for every snow in the area.
+        // Melt: direct box scan, not heightmap list, so layer=8 cannot be missed.
+        // Daytime, not snowing, every pass, one step for every snow in the box.
         // Heated snow melts every pass, day or night. Night snow and snowing snow do not melt.
         if (config.meltEnabled) {
             boolean day = level.isDay();
-            for (BlockPos pos : allSnow) {
-                if (isSnowBlock(level.getBlockState(pos.above()))) continue;
-                if (canAccumulatePrecipitation(level, pos)) continue;
-                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                if (heated) { melt(level, pos); continue; }
-                if (!day) continue;
-                melt(level, pos);
+            for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
+                for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
+                    for (int y = centre.getY() - 20; y <= centre.getY() + 20; y++) {
+                        BlockPos pos = new BlockPos(x, y, z);
+                        BlockState state = level.getBlockState(pos);
+                        if (!isSnow(state)) continue;
+                        if (isSnowBlock(level.getBlockState(pos.above()))) continue;
+                        if (canAccumulatePrecipitation(level, pos)) continue;
+                        boolean heated = hasHeatNearby(level, pos, config.heatRadius);
+                        if (heated) { melt(level, pos); continue; }
+                        if (!day) continue;
+                        melt(level, pos);
+                    }
+                }
             }
         }
         // Plant restoration after melt, for bare spots where snow is gone and it is not snowing.
@@ -218,12 +232,12 @@ public final class SnowProcessor {
         PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) return;
         // Accumulation: all at once, slowly, one layer per accumulation pass, grouped by Y level lowest first.
-        // One accumulation pass every 20 seconds: every bare ground column in the wide area gets 1 layer at the same time,
+        // One accumulation pass every 60 seconds: every bare ground column in the wide area gets 1 layer at the same time,
         // then next pass every existing snow column gets 1 more layer, also all at once.
         // This is not 16 random samples, and it does not pile one column up multiple times while others stay bare.
         // When a column gains a layer, columns below it in Y are in earlier Y groups and were already given that layer in the same pass,
         // because groups are processed lowest first and all groups are processed in one pass.
-        if (passCounter % 20 != 0) return;
+        if (passCounter % 60 != 0) return;
         // First, check if there is any bare ground that can snow. If yes, blanket all of it, one layer each, lowest Y first.
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {

@@ -2,7 +2,7 @@ name: jar-build
 on:
   push:
     tags:
-      - 'jar-264b'
+      - 'jar-264c'
 permissions:
   contents: write
 jobs:
@@ -25,4 +25,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
-          gh release create jar-264b "$JAR" --title "jar proper melt" --notes "test jar" || gh release upload jar-264b "$JAR" --clobber
+          gh release create jar-264c "$JAR" --title "jar proper melt" --notes "test jar" || gh release upload jar-264c "$JAR" --clobber
