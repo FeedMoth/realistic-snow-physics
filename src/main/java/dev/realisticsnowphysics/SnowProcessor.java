@@ -194,7 +194,7 @@ public final class SnowProcessor {
         // Daytime, not snowing, every pass, one step for every snow in the box.
         // Heated snow melts every pass, day or night. Night snow and snowing snow do not melt.
         if (config.meltEnabled) {
-            boolean day = level.isDay();
+            boolean day = level.isBrightOutside();
             for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
                 for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
                     for (int y = centre.getY() - 20; y <= centre.getY() + 20; y++) {
