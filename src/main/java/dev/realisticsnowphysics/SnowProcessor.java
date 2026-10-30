@@ -185,6 +185,7 @@ public final class SnowProcessor {
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();
+        java.util.Set<Long> leafCoveredSet = new java.util.HashSet<>();
         java.util.ArrayList<BlockPos> allSnow = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> bareByY = new java.util.ArrayList<>();
         for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
@@ -192,10 +193,21 @@ public final class SnowProcessor {
                 int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
                 // Scan down from top to find ground and snow in this column, within a reasonable band around the player and terrain.
                 // Use topY as terrain height, not player Y, so hills and valleys are both covered.
+                boolean leafAbove = false;
                 for (int y = topY + 3; y >= topY - 40 && y >= level.getMinY(); y--) {
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = level.getBlockState(pos);
                     if (isSnow(state)) { allSnow.add(pos); continue; }
+                    if (state.isAir()) continue;
+                    String sid = blockId(state);
+                    if (sid.endsWith("_leaves")) {
+                        leafAbove = true;
+                        BlockPos above = pos.above();
+                        if (level.getBlockState(above).isAir() && canHoldSnow(level, pos)) {
+                            byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
+                        }
+                        continue;
+                    }
                     if (!state.isAir()) {
                         if (PlantStore.isPlant(state)) {
                             BlockPos lowest = pos;
@@ -205,6 +217,7 @@ public final class SnowProcessor {
                             BlockPos below = lowest.below();
                             if (canHoldSnow(level, below)) {
                                 byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(lowest);
+                                if (leafAbove) leafCoveredSet.add(lowest.asLong());
                             }
                             break;
                         }
@@ -212,6 +225,7 @@ public final class SnowProcessor {
                         BlockState aboveState = level.getBlockState(above);
                         if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
                             byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
+                            if (leafAbove) leafCoveredSet.add(above.asLong());
                         }
                         break;
                     }
@@ -273,7 +287,7 @@ public final class SnowProcessor {
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
             for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
-                else if (leafPass && canAccumulateUnderLeaves(level, pos)) accumBare.add(pos);
+                else if (leafPass && (leafCoveredSet.contains(pos.asLong()) || canAccumulateUnderLeaves(level, pos))) accumBare.add(pos);
             }
         }
         for (BlockPos pos : accumBare) {
@@ -286,7 +300,7 @@ public final class SnowProcessor {
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
         allSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
         for (BlockPos pos : allSnow) {
-            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && canAccumulateUnderLeaves(level, pos))) continue;
+            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && (leafCoveredSet.contains(pos.asLong()) || canAccumulateUnderLeaves(level, pos)))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
             if (level.getRandom().nextDouble() < 0.15) continue;
