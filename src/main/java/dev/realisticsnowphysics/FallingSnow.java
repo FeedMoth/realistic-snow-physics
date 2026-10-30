@@ -20,13 +20,15 @@ public final class FallingSnow {
         queues.computeIfAbsent(level, k -> new ArrayDeque<>()).add(pos.immutable());
     }
 
-    public static void processQueue(ServerLevel level) { processQueue(level, 4); }
+    public static void processQueue(ServerLevel level) { processQueue(level, 1); }
 
     public static void processQueue(ServerLevel level, int max) {
         ArrayDeque<BlockPos> q = queues.get(level);
         if (q == null) return;
         int spawned = 0;
+        long startNanos = System.nanoTime();
         while (!q.isEmpty() && spawned < max) {
+            if (System.nanoTime() - startNanos > 50_000_000L) break;
             BlockPos pos = q.poll();
             Set<Long> set = queuedSet.get(level);
             if (set != null) set.remove(pos.asLong());
@@ -48,25 +50,25 @@ public final class FallingSnow {
                 if (landing.equals(pos)) continue;
                 BlockState landingState = level.getBlockState(landing);
                 PlantStore.StoredPlant plant2 = PlantStore.take(level, pos);
-                level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
                 if (plant2 != null) {
                     BlockState restored = PlantStore.restoreState(plant2);
-                    if (restored != null) level.setBlock(pos, restored, 3);
+                    if (restored != null) level.setBlock(pos, restored, 2);
                 }
                 if (SnowProcessor.isSnowLayer(landingState)) {
                     int existing = landingState.getValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS);
                     int total = existing + layers;
                     if (total <= 8) {
-                        level.setBlock(landing, landingState.setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, total), 3);
+                        level.setBlock(landing, landingState.setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, total), 2);
                     } else {
-                        level.setBlock(landing, net.minecraft.world.level.block.Blocks.SNOW_BLOCK.defaultBlockState(), 3);
+                        level.setBlock(landing, net.minecraft.world.level.block.Blocks.SNOW_BLOCK.defaultBlockState(), 2);
                         int rem = total - 8;
-                        if (rem > 0) level.setBlock(landing.above(), net.minecraft.world.level.block.Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, rem), 3);
+                        if (rem > 0) level.setBlock(landing.above(), net.minecraft.world.level.block.Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, rem), 2);
                     }
                 } else if (landingState.isAir()) {
-                    level.setBlock(landing, state, 3);
+                    level.setBlock(landing, state, 2);
                 } else {
-                    level.setBlock(pos, state, 3);
+                    level.setBlock(pos, state, 2);
                     continue;
                 }
                 spawned++;
@@ -77,17 +79,17 @@ public final class FallingSnow {
             if (plant != null) {
                 BlockState restored = PlantStore.restoreState(plant);
                 if (restored != null) {
-                    level.setBlock(pos, restored, 3);
+                    level.setBlock(pos, restored, 2);
                     if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
                         BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
-                        level.setBlock(pos.above(), upper, 3);
+                        level.setBlock(pos.above(), upper, 2);
                     }
                     PlantStore.saveIfDirty();
                 } else {
-                    level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
                 }
             } else {
-                level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
             }
             spawned++;
         }
