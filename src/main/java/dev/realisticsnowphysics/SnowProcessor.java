@@ -184,23 +184,12 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Melt: all at once, slowly, one step per melt pass, not random chunks.
-        // Melt passes run every 5 seconds in daylight or near heat, so a full block visibly drops to 7 layers, then down, uniformly across the area.
-        // Full blocks are included: isSnow includes snow_block, and melt() converts a block to 7 layers.
-        if (config.meltEnabled && passCounter % 5 == 0) {
+        // Melt, original working version: unconditional, direct box, every snow melts one step per pass.
+        // No chance roll, no bright check, no heat check. If it is snow and not under a snow block, it melts.
+        if (config.meltEnabled) {
             for (BlockPos pos : allSnow) {
                 if (isSnowBlock(level.getBlockState(pos.above()))) continue;
-                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
-                boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
-                double chance;
-                if (heated) chance = 1.0;
-                else if (bright && warm) chance = 0.8;
-                else if (bright) chance = 0.5;
-                else chance = 0.0;
-                chance = chance * SeasonsHook.meltMultiplier();
-                if (chance > 0.0 && level.getRandom().nextDouble() < chance) melt(level, pos);
-                // If chance is high, melt still only one layer per pass, so it is slow and uniform, not instant vanishing.
+                melt(level, pos);
             }
         }
         // Plant restoration after melt, for bare spots where snow is gone and it is not snowing.
