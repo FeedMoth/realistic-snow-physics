@@ -372,6 +372,10 @@ public final class SnowProcessor {
                 } else if (bright) {
                     chance = config.coldSunMeltChance;
                 }
+                if (isSnowBlock(state)) {
+                    RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] DEBUG snow block at {} bright={} brightOutside={} sky={} warm={} temp={} heated={} chance={} meltEnabled={}",
+                            pos, bright, level.isBrightOutside(), level.canSeeSky(pos), warm, effectiveTemperature(level, pos), heated, chance, config.meltEnabled);
+                }
                 if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
                     if (melt(level, pos)) {
                         melted++;
