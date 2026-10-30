@@ -60,6 +60,7 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                 int radius = Math.max(1, config.sampleRadius);
                 try {
                     java.util.Set<Long> processed = processedByLevel.computeIfAbsent(level, k -> new java.util.HashSet<Long>());
+                    try { FallingSnow.process(level, centre); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling snow at {}", centre, e); }
                     SnowProcessor.processArea(level, centre, radius, config.samplesPerPlayer, processed);
                 } catch (Exception e) {
                     LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
