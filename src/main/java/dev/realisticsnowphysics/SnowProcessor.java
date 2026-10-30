@@ -483,31 +483,6 @@ public final class SnowProcessor {
             }
         }
 
-        // Plants buried by Snow come back when their snow is gone and
-        // it is not snowing again right now, so a player clearing snow
-        // after a storm, or snow melting away, restores the flower,
-        // grass, or mushroom that was underneath.
-        for (BlockPos pos : barePositions) {
-            if (canAccumulatePrecipitation(level, pos)) {
-                continue;
-            }
-            if (!level.getBlockState(pos).isAir()) {
-                continue;
-            }
-            PlantStore.StoredPlant plant = PlantStore.take(level, pos);
-            if (plant != null) {
-                BlockState restored = PlantStore.restoreState(plant);
-                if (restored != null) {
-                    level.setBlock(pos, restored, 3);
-                    if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
-                        BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
-                                net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
-                        level.setBlock(pos.above(), upper, 3);
-                    }
-                }
-            }
-        }
-        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }

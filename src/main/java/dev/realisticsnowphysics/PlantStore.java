@@ -94,7 +94,7 @@ public final class PlantStore {
 
     private static String dimensionOf(Level level) {
         ResourceKey<Level> key = level.dimension();
-        return key == null ? "minecraft:overworld" : key.location().toString();
+        return key == null ? "minecraft:overworld" : key.identifier().toString();
     }
 
     public static String blockId(BlockState state) {
@@ -181,7 +181,7 @@ public final class PlantStore {
     }
 
     public static BlockState restoreState(StoredPlant plant) {
-        Block block = BuiltInRegistries.BLOCK.get(net.minecraft.resources.ResourceLocation.parse(plant.block));
+        Block block = BuiltInRegistries.BLOCK.get(net.minecraft.resources.Identifier.parse(plant.block));
         if (block == null || block == Blocks.AIR) {
             return null;
         }
