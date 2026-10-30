@@ -15,7 +15,6 @@ public final class FallingSnow {
     public static final int RADIUS = 16;
 
     public static void queue(ServerLevel level, BlockPos pos) {
-        RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] falling queue " + pos.getX() + "," + pos.getY() + "," + pos.getZ());
         Set<Long> set = queuedSet.computeIfAbsent(level, k -> new HashSet<>());
         if (!set.add(pos.asLong())) return;
         queues.computeIfAbsent(level, k -> new ArrayDeque<>()).add(pos.immutable());
@@ -27,15 +26,17 @@ public final class FallingSnow {
         ArrayDeque<BlockPos> q = queues.get(level);
         if (q == null) return;
         int spawned = 0;
+        int attempts = 0;
         long startNanos = System.nanoTime();
-        while (!q.isEmpty() && spawned < max) {
+        while (!q.isEmpty() && spawned < max && attempts < 10) {
+            attempts++;
             if (System.nanoTime() - startNanos > 50_000_000L) break;
             BlockPos pos = q.poll();
             Set<Long> set = queuedSet.get(level);
             if (set != null) set.remove(pos.asLong());
             BlockState state = level.getBlockState(pos);
-            if (!SnowProcessor.isSnow(state)) { RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] falling skip not snow " + pos.getX() + "," + pos.getY() + "," + pos.getZ()); continue; }
-            if (!level.getBlockState(pos.below()).isAir()) { RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] falling skip below not air " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " below=" + SnowProcessor.blockId(level.getBlockState(pos.below()))); continue; }
+            if (!SnowProcessor.isSnow(state)) continue;
+            if (!level.getBlockState(pos.below()).isAir()) continue;
             PlantStore.StoredPlant plant = PlantStore.take(level, pos);
             if (SnowProcessor.isSnowLayer(state)) {
                 int layers = state.getValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS);
@@ -46,11 +47,11 @@ public final class FallingSnow {
                     if (SnowProcessor.isSnow(bs)) continue;
                     landingY = y + 1; break;
                 }
-                if (landingY < 0) { RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] falling skip no landing " + pos.getX() + "," + pos.getY() + "," + pos.getZ()); continue; }
-                RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] falling layer " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " layers=" + layers + " landingY=" + landingY);
+                if (landingY < 0) continue;
                 BlockPos landing = new BlockPos(pos.getX(), landingY, pos.getZ());
                 if (landing.equals(pos)) continue;
                 BlockState landingState = level.getBlockState(landing);
+                if (!SnowProcessor.isSnowLayer(landingState) && !landingState.isAir()) continue;
                 PlantStore.StoredPlant plant2 = PlantStore.take(level, pos);
                 level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
                 if (plant2 != null) {
@@ -70,7 +71,6 @@ public final class FallingSnow {
                 } else if (landingState.isAir()) {
                     level.setBlock(landing, state, 2);
                 } else {
-                    level.setBlock(pos, state, 2);
                     continue;
                 }
                 spawned++;

@@ -55,6 +55,6 @@ public class SnowLayerBlockMixin {
         if (!cir.getReturnValue().isAir()) return;
         if (!(level instanceof ServerLevel sl)) return;
         cir.setReturnValue(state);
-        FallingSnow.queue(sl, pos);
+        if (sl.getBlockState(pos.below()).isAir()) FallingSnow.queue(sl, pos);
     }
 }
