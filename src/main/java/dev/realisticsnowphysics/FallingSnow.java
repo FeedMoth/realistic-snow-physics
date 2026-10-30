@@ -54,13 +54,9 @@ public final class FallingSnow {
             // Restore buried plant at original spot, if any, instead of leaving air
             PlantStore.StoredPlant plant = PlantStore.take(level, pos);
             // Spawn falling entity carrying exact state, layers preserved
-            try {
-                FallingBlockEntity entity = new FallingBlockEntity(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, state);
-                level.addFreshEntity(entity);
-            } catch (Exception e) {
-                // If constructor API differs, fall back to leaving block in place, do not lose snow
-                continue;
-            }
+            // Use public fall() API, not the private constructor. fall() creates the entity, sets the block to air, and adds the entity.
+            FallingBlockEntity entity = FallingBlockEntity.fall(level, pos, state);
+            if (entity == null) continue;
             if (plant != null) {
                 BlockState restored = PlantStore.restoreState(plant);
                 if (restored != null) {
