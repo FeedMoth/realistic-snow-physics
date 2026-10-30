@@ -424,25 +424,6 @@ public final class SnowProcessor {
             }
         }
 
-        for (BlockPos pos : barePositions) {
-            if (canAccumulatePrecipitation(world, pos)) {
-                continue;
-            }
-            if (!world.getBlockState(pos).isAir()) {
-                continue;
-            }
-            PlantStore.StoredPlant plant = PlantStore.take(world, pos);
-            if (plant != null) {
-                BlockState restored = PlantStore.restoreState(plant);
-                if (restored != null) {
-                    world.setBlockState(pos, restored, 3);
-                    if (PlantStore.isTallPlant(restored) && world.getBlockState(pos.up()).isAir()) {
-                        world.setBlockState(pos.up(), restored.with(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER), 3);
-                    }
-                }
-            }
-        }
-        PlantStore.saveIfDirty();
         if (!config.accumulationEnabled) {
             return;
         }
