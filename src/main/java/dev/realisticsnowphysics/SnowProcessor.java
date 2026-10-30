@@ -67,7 +67,7 @@ public final class SnowProcessor {
     public static boolean canAccumulatePrecipitation(ServerLevel level, BlockPos pos) {
         return isSnowing(level, pos) || isForcedSnowPrecipitation(level, pos);
     }
-    public static boolean isLeafCovered(ServerLevel level, BlockPos pos) {
+    public static boolean isLeafCoveredUncached(ServerLevel level, BlockPos pos) {
         for (int y = pos.getY() + 1; y <= pos.getY() + 20; y++) {
             BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
             if (s.isAir()) continue;
@@ -76,6 +76,14 @@ public final class SnowProcessor {
             return id.endsWith("_leaves");
         }
         return false;
+    }
+    public static boolean isLeafCovered(ServerLevel level, BlockPos pos) {
+        long k = pos.asLong();
+        Boolean cached = leafCache.get(k);
+        if (cached != null) return cached;
+        boolean v = isLeafCoveredUncached(level, pos);
+        leafCache.put(k, v);
+        return v;
     }
     public static boolean canAccumulateUnderLeaves(ServerLevel level, BlockPos pos) {
         boolean snowing = (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || isForcedSnowPrecipitation(level, pos);
@@ -90,7 +98,7 @@ public final class SnowProcessor {
         if (id.equals("minecraft:water") || id.equals("minecraft:ice") || id.equals("minecraft:packed_ice") || id.equals("minecraft:blue_ice") || id.equals("minecraft:powder_snow")) return false;
         return state.isFaceSturdy(level, below, net.minecraft.core.Direction.UP);
     }
-    public static boolean isValley(ServerLevel level, BlockPos pos) {
+    public static boolean isValleyUncached(ServerLevel level, BlockPos pos) {
         BlockPos cursor = pos;
         for (int i = 0; i < 6; i++) {
             BlockState below = level.getBlockState(cursor.below());
@@ -120,6 +128,14 @@ public final class SnowProcessor {
         // Valley if at least one neighbour in radius 6 is higher, and the column is not above average terrain.
         // Old avg>=1 rule failed for small pits and wide valley floors, where most neighbours are flat and only walls are higher.
         return maxDiff >= 1 && totalDiff >= 0;
+    }
+    public static boolean isValley(ServerLevel level, BlockPos pos) {
+        long k = pos.asLong();
+        Boolean cached = valleyCache.get(k);
+        if (cached != null) return cached;
+        boolean v = isValleyUncached(level, pos);
+        valleyCache.put(k, v);
+        return v;
     }
     public static String valleyDiagnose(ServerLevel level, BlockPos pos) {
         BlockPos cursor = pos;
@@ -212,6 +228,8 @@ public final class SnowProcessor {
         return false;
     }
     private static int passCounter = 0;
+    private static final java.util.Map<Long, Boolean> valleyCache = new java.util.HashMap<>();
+    private static final java.util.Map<Long, Boolean> leafCache = new java.util.HashMap<>();
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
@@ -220,8 +238,9 @@ public final class SnowProcessor {
         if (scale <= 0.0) return;
         passCounter++;
         if (passCounter % 30 != 0) return;
-        // Wide area, reduced from 96 to 64 to cut scan cost: 129x129 columns instead of 193x193, still covers nearby biomes.
-        int wideRadius = Math.max(radius, 64);
+        valleyCache.clear(); leafCache.clear();
+        // Wide area, extended to 128: 257x257 columns, covers nearby biomes and valleys, with per-pass caches to keep cost down.
+        int wideRadius = Math.max(radius, 128);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();
@@ -230,6 +249,7 @@ public final class SnowProcessor {
         java.util.ArrayList<BlockPos> bareByY = new java.util.ArrayList<>();
         for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
             for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
+                if (!level.isLoaded(new BlockPos(x, centre.getY(), z))) continue;
                 int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
                 // Scan down from top to find ground and snow in this column, within a reasonable band around the player and terrain.
                 // Use topY as terrain height, not player Y, so hills and valleys are both covered.
