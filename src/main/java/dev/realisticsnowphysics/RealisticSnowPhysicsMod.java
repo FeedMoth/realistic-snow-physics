@@ -63,7 +63,12 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
             java.util.List<ServerPlayer> players = server.getPlayerList().getPlayers();
             if (players.isEmpty()) return;
             ServerPlayer first = players.get(0);
-            try { SnowProcessor.tickStaggered(first.level(), first.blockPosition(), server.getTickCount()); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error staggered snow", e); }
+            // Async pipeline, server-side threads only: snapshot on the server
+            // thread, decisions on a daemon worker thread, applies back on the
+            // server thread in 20 ms batches. No client code, no client mod.
+            // Legacy SnowProcessor.tickStaggered remains in the tree, unused
+            // in this branch, as the synchronous fallback reference.
+            try { AsyncSnowPipeline.tick(first.level(), first.blockPosition(), server.getTickCount()); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error async snow", e); }
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -124,6 +129,13 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                 BlockPos centre = player.blockPosition();
                                 String diag = SnowProcessor.valleyDiagnose(level, centre);
                                 context.getSource().sendSuccess(() -> Component.literal("Snow diagnose at " + centre.getX() + "," + centre.getY() + "," + centre.getZ() + ": " + diag), false);
+                                return 1;
+                            })));
+            dispatcher.register(Commands.literal("realistic-snow-physics")
+                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                    .then(Commands.literal("async")
+                            .executes(context -> {
+                                context.getSource().sendSuccess(() -> Component.literal("Realistic Snow Physics: " + AsyncSnowPipeline.status()), false);
                                 return 1;
                             })));
             dispatcher.register(Commands.literal("realistic-snow-physics")
