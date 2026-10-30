@@ -15,8 +15,17 @@ jobs:
           java-version: '21'
           distribution: 'microsoft'
       - run: chmod +x ./gradlew
-      - run: ./gradlew build
-      - env:
+      - run: ./gradlew build 2>&1 | tee build-log.txt; test ${PIPESTATUS[0]} -eq 0
+      - if: always()
+        run: |
+          git config user.name "FeedMoth"
+          git config user.email "FeedMoth@users.noreply.github.com"
+          git checkout -B ci-log-1.21.11
+          git add build-log.txt || true
+          git commit -m "CI log" || true
+          git push -f origin ci-log-1.21.11 || true
+      - if: success()
+        env:
           GH_TOKEN: ${{ github.token }}
         run: |
           JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
