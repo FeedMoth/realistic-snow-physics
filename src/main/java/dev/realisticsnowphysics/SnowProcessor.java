@@ -252,14 +252,15 @@ public final class SnowProcessor {
         passCounter++;
         if (passCounter % 30 != 0) return;
         valleyCache.clear(); leafCache.clear(); groundYCache.clear();
-        // Wide area, extended to 128: 257x257 columns, covers nearby biomes and valleys, with per-pass caches to keep cost down.
-        int wideRadius = Math.max(radius, 128);
+        // Wide area, 96: 193x193 columns, covers nearby biomes, with per-pass caches to keep cost down.
+        int wideRadius = Math.max(radius, 96);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();
         java.util.Set<Long> leafCoveredSet = new java.util.HashSet<>();
         java.util.ArrayList<BlockPos> allSnow = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> bareByY = new java.util.ArrayList<>();
+        java.util.Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunkCache = new java.util.HashMap<>();
         for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
             for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
                 if (!level.isLoaded(new BlockPos(x, centre.getY(), z))) continue;
