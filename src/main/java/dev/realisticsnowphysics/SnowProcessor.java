@@ -300,6 +300,7 @@ public final class SnowProcessor {
         }
         sortByHeight(snowPositions, snowHeights);
         sortByHeight(barePositions, bareHeights);
+        java.util.Collections.shuffle(snowPositions, new java.util.Random(world.getRandom().nextLong()));
         snowPositions.sort((a, b) -> Boolean.compare(!isSnowBlock(world.getBlockState(a)), !isSnowBlock(world.getBlockState(b))));
         if (config.meltEnabled) {
             int melted = 0;
