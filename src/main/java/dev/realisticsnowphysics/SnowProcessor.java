@@ -120,7 +120,7 @@ public final class SnowProcessor {
     }
     public static boolean melt(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
-        if (isSnowBlock(level.getBlockState(pos.above()))) return false;
+        if (isSnow(level.getBlockState(pos.above()))) return false;
         if (isSnowLayer(state)) {
             int layers = state.getValue(SnowLayerBlock.LAYERS);
             if (layers <= 1) {
@@ -190,24 +190,25 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Melt: direct box scan, not heightmap list, so layer=8 cannot be missed.
-        // Daytime, not snowing, every pass, one step for every snow in the box.
-        // Heated snow melts every pass, day or night. Night snow and snowing snow do not melt.
+        // Melt: topmost snow per column only, y descending.
+        // Snow can stack past 8 layers in a column. If a lower layer drops from 8 to 7 while a layer sits on it,
+        // vanilla canSurvive fails for the upper layer, because its support is no longer full, and it breaks.
+        // Melting only the top snow per pass avoids that: upper snow is gone before lower snow is reduced.
         if (config.meltEnabled) {
             boolean day = level.isBrightOutside();
             for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
                 for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
-                    for (int y = centre.getY() - 20; y <= centre.getY() + 20; y++) {
+                    BlockPos top = null;
+                    for (int y = centre.getY() + 20; y >= centre.getY() - 20; y--) {
                         BlockPos pos = new BlockPos(x, y, z);
-                        BlockState state = level.getBlockState(pos);
-                        if (!isSnow(state)) continue;
-                        if (isSnowBlock(level.getBlockState(pos.above()))) continue;
-                        if (canAccumulatePrecipitation(level, pos)) continue;
-                        boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                        if (heated) { melt(level, pos); continue; }
-                        if (!day) continue;
-                        melt(level, pos);
+                        if (isSnow(level.getBlockState(pos))) { top = pos; break; }
                     }
+                    if (top == null) continue;
+                    if (canAccumulatePrecipitation(level, top)) continue;
+                    boolean heated = hasHeatNearby(level, top, config.heatRadius);
+                    if (heated) { melt(level, top); continue; }
+                    if (!day) continue;
+                    melt(level, top);
                 }
             }
         }
