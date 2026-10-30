@@ -73,6 +73,30 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("realistic-snow-physics")
                     .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                    .then(Commands.literal("scan")
+                            .executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayerOrException();
+                                ServerLevel level = player.level();
+                                BlockPos centre = player.blockPosition();
+                                int radius = RealisticSnowPhysicsConfig.get().sampleRadius;
+                                int blocks = 0, layers = 0;
+                                for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
+                                    for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                                        int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+                                        for (int y = topY; y >= topY - 6 && y >= level.getMinY(); y--) {
+                                            net.minecraft.world.level.block.state.BlockState st = level.getBlockState(new BlockPos(x, y, z));
+                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW_BLOCK)) { blocks++; LOGGER.info("[Realistic Snow Physics] SCAN snow block at {} {} {}", x, y, z); break; }
+                                            if (st.is(net.minecraft.world.level.block.Blocks.SNOW)) { layers++; break; }
+                                            if (!st.isAir()) { break; }
+                                        }
+                                    }
+                                }
+                                int b = blocks, l = layers;
+                                context.getSource().sendSuccess(() -> Component.literal("Snow scan: " + b + " snow blocks, " + l + " snow layers in radius " + radius), false);
+                                return 1;
+                            })));
+            dispatcher.register(Commands.literal("realistic-snow-physics")
+                    .requires(source -> source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
                     .then(Commands.literal("reload")
                             .executes(context -> {
                                 RealisticSnowPhysicsConfig.load();
