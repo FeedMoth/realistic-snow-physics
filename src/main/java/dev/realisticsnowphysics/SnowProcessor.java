@@ -64,6 +64,22 @@ public final class SnowProcessor {
     public static boolean canAccumulatePrecipitation(ServerLevel level, BlockPos pos) {
         return isSnowing(level, pos) || isForcedSnowPrecipitation(level, pos);
     }
+    public static boolean isLeafCovered(ServerLevel level, BlockPos pos) {
+        for (int y = pos.getY() + 1; y <= pos.getY() + 20; y++) {
+            BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
+            if (s.isAir()) continue;
+            if (isSnow(s)) continue;
+            String id = blockId(s);
+            return id.endsWith("_leaves");
+        }
+        return false;
+    }
+    public static boolean canAccumulateUnderLeaves(ServerLevel level, BlockPos pos) {
+        boolean snowing = (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || isForcedSnowPrecipitation(level, pos);
+        if (!snowing) return false;
+        if (level.canSeeSky(pos)) return false;
+        return isLeafCovered(level, pos);
+    }
     private static boolean canHoldSnow(ServerLevel level, BlockPos below) {
         BlockState state = level.getBlockState(below);
         if (state.isAir()) return false;
@@ -245,9 +261,11 @@ public final class SnowProcessor {
         if (passCounter % 30 != 0) return;
         // First, check if there is any bare ground that can snow. If yes, blanket all of it, one layer each, lowest Y first.
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
+        boolean leafPass = passCounter % 120 == 0;
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
             for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
+                else if (leafPass && canAccumulateUnderLeaves(level, pos)) accumBare.add(pos);
             }
         }
         if (!accumBare.isEmpty()) {
@@ -264,7 +282,7 @@ public final class SnowProcessor {
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
         allSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
         for (BlockPos pos : allSnow) {
-            if (!canAccumulatePrecipitation(level, pos)) continue;
+            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && canAccumulateUnderLeaves(level, pos))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
             accumulate(level, pos);
