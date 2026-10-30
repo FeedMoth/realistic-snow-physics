@@ -355,16 +355,31 @@ public final class SnowProcessor {
         // No bare ground left, so pile up: every top snow column gets 1 more layer, all at once, lowest Y first.
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
         allSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
+        java.util.Map<Long, Integer> topSnowY = new java.util.HashMap<>();
+        for (BlockPos sp : allSnow) {
+            long k = ((long) sp.getX() << 32) | (sp.getZ() & 0xffffffffL);
+            topSnowY.merge(k, sp.getY(), Math::max);
+        }
         for (BlockPos pos : allSnow) {
             boolean leafCol = leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos);
             if (leafCol) { if (!leafPass || !isSnowingInBiome(level, pos)) continue; }
             else { if (!isSnowingInBiome(level, pos)) continue; }
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
+            if (isValley(level, pos)) {
+                int myTop = topSnowY.getOrDefault(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL), pos.getY());
+                int minNeighbourTop = Integer.MAX_VALUE;
+                for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+                    if (dx == 0 && dz == 0) continue;
+                    Integer nt = topSnowY.get(((long) (pos.getX() + dx) << 32) | ((pos.getZ() + dz) & 0xffffffffL));
+                    if (nt != null && nt < minNeighbourTop) minNeighbourTop = nt;
+                }
+                if (minNeighbourTop != Integer.MAX_VALUE && myTop > minNeighbourTop + 1) continue;
+            }
             if (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)) {
                 BlockState st = level.getBlockState(pos);
                 if (isSnowBlock(st)) continue;
-                if (isSnowLayer(st) && st.getValue(SnowLayerBlock.LAYERS) >= 8) continue;
+                if (isSnowLayer(st) && st.getValue(SnowLayerBlock.LAYERS) >= 4) continue;
             }
             if (level.getRandom().nextDouble() < 0.15) continue;
             accumulate(level, pos);
