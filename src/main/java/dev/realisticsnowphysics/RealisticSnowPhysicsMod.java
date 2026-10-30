@@ -59,6 +59,14 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (!RealisticSnowPhysicsConfig.get().enabled) return;
+            java.util.List<ServerPlayer> players = server.getPlayerList().getPlayers();
+            if (players.isEmpty()) return;
+            ServerPlayer first = players.get(0);
+            try { SnowProcessor.tickStaggered(first.level(), first.blockPosition(), server.getTickCount()); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error staggered snow", e); }
+        });
+
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
             RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
             if (!config.enabled) {
                 return;
@@ -74,7 +82,6 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                 try {
                     java.util.Set<Long> processed = processedByLevel.computeIfAbsent(level, k -> new java.util.HashSet<Long>());
                     if (server.getTickCount() % 100 == 0) { try { FallingSnow.process(level, centre); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling snow at {}", centre, e); } }
-                    SnowProcessor.processArea(level, centre, radius, config.samplesPerPlayer, processed);
                 } catch (Exception e) {
                     LOGGER.error("[Realistic Snow Physics] error processing snow at {}", centre, e);
                 }

@@ -240,19 +240,36 @@ public final class SnowProcessor {
         return false;
     }
     private static int passCounter = 0;
+    private static int staggeredBand = 999;
+    private static long staggeredCycleTick = -1;
     private static final java.util.Map<Long, Boolean> valleyCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Integer> groundYCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Boolean> leafCache = new java.util.HashMap<>();
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
-    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
+    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) { processAreaBanded(level, centre, radius, centre.getX() - Math.max(radius, 64), centre.getX() + Math.max(radius, 64)); }
+    // Staggered: one band per tick, 30 bands per 30-second cycle, so a full 129x129 scan is spread over 30 ticks instead of 1 tick. Each column still gets 1 layer per 30s cycle, work is just spread out.
+    public static void tickStaggered(ServerLevel level, BlockPos centre, long tickCount) {
+        RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
+        if (!config.enabled) return;
+        if (tickScale(level) <= 0.0) return;
+        int wideRadius = Math.max(config.sampleRadius, 64);
+        int totalWidth = wideRadius * 2 + 1;
+        int bandCount = 30;
+        int bandWidth = (totalWidth + bandCount - 1) / bandCount;
+        if (tickCount % 600 == 0) { staggeredBand = 0; staggeredCycleTick = tickCount; }
+        if (staggeredBand >= bandCount) return;
+        int xStart = centre.getX() - wideRadius + staggeredBand * bandWidth;
+        int xEnd = Math.min(centre.getX() + wideRadius, xStart + bandWidth - 1);
+        staggeredBand++;
+        processAreaBanded(level, centre, config.sampleRadius, xStart, xEnd);
+    }
+    public static void processAreaBanded(ServerLevel level, BlockPos centre, int radius, int xStartBand, int xEndBand) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         if (!config.enabled) return;
         double scale = tickScale(level);
         if (scale <= 0.0) return;
         passCounter++;
-        if (passCounter % 30 != 0) return;
         valleyCache.clear(); leafCache.clear(); groundYCache.clear();
-        // Wide area, 64: 129x129 columns, chunk-cached scan, per-pass caches to keep cost down. Radius dropped from 128/96 to 64 to kill the 4-7s spike, behaviour per column unchanged.
         int wideRadius = Math.max(radius, 64);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
@@ -261,7 +278,7 @@ public final class SnowProcessor {
         java.util.ArrayList<BlockPos> allSnow = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> bareByY = new java.util.ArrayList<>();
         java.util.Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunkCache = new java.util.HashMap<>();
-        for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
+        for (int x = xStartBand; x <= xEndBand; x++) {
             for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
                 if (!level.isLoaded(new BlockPos(x, centre.getY(), z))) continue;
                 long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
@@ -375,10 +392,9 @@ public final class SnowProcessor {
         // This is not 16 random samples, and it does not pile one column up multiple times while others stay bare.
         // When a column gains a layer, columns below it in Y are in earlier Y groups and were already given that layer in the same pass,
         // because groups are processed lowest first and all groups are processed in one pass.
-        if (passCounter % 30 != 0) return;
         // First, check if there is any bare ground that can snow. If yes, blanket all of it, one layer each, lowest Y first.
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
-        boolean leafPass = passCounter % 60 == 0;
+        boolean leafPass = (staggeredCycleTick >= 0 && (staggeredCycleTick / 600) % 2 == 0);
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
             for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
