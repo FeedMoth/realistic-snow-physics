@@ -14,10 +14,34 @@ public final class FallingSnow {
     public static final int MAX_PER_SECOND = 8;
     public static final int RADIUS = 16;
 
-    public static void queue(ServerLevel level, BlockPos pos) {
+    private static void queueOne(ServerLevel level, BlockPos pos) {
         Set<Long> set = queuedSet.computeIfAbsent(level, k -> new HashSet<>());
         if (!set.add(pos.asLong())) return;
         queues.computeIfAbsent(level, k -> new ArrayDeque<>()).add(pos.immutable());
+    }
+
+    public static void queue(ServerLevel level, BlockPos pos) {
+        // Queue the whole continuous snow column above, bottom to top.
+        // Without this, only the bottom of a stack was queued: the middle
+        // blocks fell one at a time on later scans, and the top layer,
+        // seeing air all the way down, teleported straight to the ground
+        // while the middle blocks were still falling as entities, and
+        // those entities then tried to land on the layer and broke.
+        for (int y = pos.getY(); y <= level.getMaxY(); y++) {
+            BlockPos cand = new BlockPos(pos.getX(), y, pos.getZ());
+            if (!SnowProcessor.isSnow(level.getBlockState(cand))) break;
+            queueOne(level, cand);
+        }
+    }
+
+    // True if a snow falling-block entity is still in this column below pos.
+    private static boolean hasFallingEntityBelow(ServerLevel level, BlockPos pos) {
+        for (FallingBlockEntity e : level.getEntitiesOfClass(FallingBlockEntity.class,
+                new net.minecraft.world.phys.AABB(pos.getX(), level.getMinY(), pos.getZ(),
+                        pos.getX() + 1, pos.getY(), pos.getZ() + 1))) {
+            if (SnowProcessor.isSnow(e.getBlockState())) return true;
+        }
+        return false;
     }
 
     public static void processQueue(ServerLevel level) { processQueue(level, 4); }
@@ -27,6 +51,7 @@ public final class FallingSnow {
         if (q == null) return;
         int spawned = 0;
         int attempts = 0;
+        java.util.List<BlockPos> deferred = new java.util.ArrayList<>();
         long startNanos = System.nanoTime();
         while (!q.isEmpty() && spawned < max && attempts < 20) {
             attempts++;
@@ -37,6 +62,11 @@ public final class FallingSnow {
             BlockState state = level.getBlockState(pos);
             if (!SnowProcessor.isSnow(state)) continue;
             if (!level.getBlockState(pos.below()).isAir()) continue;
+            // Wait for any snow block entity below in this column to land
+            // first. Otherwise the top layer teleports to the ground and
+            // the falling middle blocks land on it and break, instead of
+            // the stack landing bottom to top in order.
+            if (hasFallingEntityBelow(level, pos)) { deferred.add(pos); continue; }
             PlantStore.StoredPlant plant = PlantStore.take(level, pos);
             if (SnowProcessor.isSnowLayer(state)) {
                 int layers = state.getValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS);
@@ -116,6 +146,7 @@ public final class FallingSnow {
             }
             spawned++;
         }
+        for (BlockPos d : deferred) queueOne(level, d);
     }
 
     private static void removeOriginal(ServerLevel level, BlockPos pos, PlantStore.StoredPlant plant2) {
