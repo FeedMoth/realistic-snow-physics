@@ -51,6 +51,41 @@ public final class FallingSnow {
                 BlockPos landing = new BlockPos(pos.getX(), landingY, pos.getZ());
                 if (landing.equals(pos)) continue;
                 BlockState landingState = level.getBlockState(landing);
+                if (SnowProcessor.isSnowBlock(landingState)) {
+                    BlockPos aboveSnowBlock = landing.above();
+                    BlockState aboveState = level.getBlockState(aboveSnowBlock);
+                    if (aboveState.isAir()) {
+                        PlantStore.StoredPlant plant2 = PlantStore.take(level, pos);
+                        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
+                        if (plant2 != null) {
+                            BlockState restored = PlantStore.restoreState(plant2);
+                            if (restored != null) level.setBlock(pos, restored, 2);
+                        }
+                        level.setBlock(aboveSnowBlock, state, 2);
+                        spawned++;
+                        continue;
+                    } else if (SnowProcessor.isSnowLayer(aboveState)) {
+                        int existing = aboveState.getValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS);
+                        int total = existing + layers;
+                        PlantStore.StoredPlant plant2 = PlantStore.take(level, pos);
+                        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
+                        if (plant2 != null) {
+                            BlockState restored = PlantStore.restoreState(plant2);
+                            if (restored != null) level.setBlock(pos, restored, 2);
+                        }
+                        if (total <= 8) {
+                            level.setBlock(aboveSnowBlock, aboveState.setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, total), 2);
+                        } else {
+                            level.setBlock(aboveSnowBlock, net.minecraft.world.level.block.Blocks.SNOW_BLOCK.defaultBlockState(), 2);
+                            int rem = total - 8;
+                            if (rem > 0) level.setBlock(aboveSnowBlock.above(), net.minecraft.world.level.block.Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, rem), 2);
+                        }
+                        spawned++;
+                        continue;
+                    } else {
+                        continue;
+                    }
+                }
                 if (!SnowProcessor.isSnowLayer(landingState) && !landingState.isAir()) continue;
                 PlantStore.StoredPlant plant2 = PlantStore.take(level, pos);
                 level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
