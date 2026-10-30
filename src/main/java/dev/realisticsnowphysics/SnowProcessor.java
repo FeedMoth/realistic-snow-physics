@@ -261,7 +261,7 @@ public final class SnowProcessor {
         if (passCounter % 30 != 0) return;
         // First, check if there is any bare ground that can snow. If yes, blanket all of it, one layer each, lowest Y first.
         java.util.ArrayList<BlockPos> accumBare = new java.util.ArrayList<>();
-        boolean leafPass = passCounter % 120 == 0;
+        boolean leafPass = passCounter % 60 == 0;
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
             for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
