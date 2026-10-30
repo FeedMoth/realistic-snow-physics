@@ -359,41 +359,29 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Sort both lists by height, lowest first. Sorting by index
-        // in parallel lists keeps this simple without a new record type.
-        sortByHeight(snowPositions, snowHeights);
-        sortByHeight(barePositions, bareHeights);
-        // Full snow blocks melt first, otherwise a field of thin layers
-        // starves them: the melt batch is spent on low columns before a
-        // single full block on a hill is ever rolled.
-        snowPositions.sort((a, b) -> Double.compare(a.distSqr(centre), b.distSqr(centre)));
-        if (config.meltEnabled) {
-            int melted = 0;
-            int meltBatch = meltBatchScaled;
-            for (BlockPos pos : snowPositions) {
-                if (melted >= meltBatch) {
-                    break;
-                }
-                processedColumns.add(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL));
-                BlockState state = level.getBlockState(pos);
-                boolean bright = level.isBrightOutside() && level.canSeeSky(pos);
-                boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
-                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
-                double chance = 0.0;
-                if (heated) {
-                    chance = config.heatMeltChance;
-                } else if (bright && warm) {
-                    chance = config.warmMeltChance;
-                } else if (bright) {
-                    chance = config.coldSunMeltChance;
-                }
-                if (isSnowBlock(state)) {
-                    RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] DEBUG snow block at {} bright={} brightOutside={} sky={} warm={} temp={} heated={} chance={} meltEnabled={}",
-                            pos, bright, level.isBrightOutside(), level.canSeeSky(pos), warm, effectiveTemperature(level, pos), heated, chance, config.meltEnabled);
-                }
-                if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
-                    if (melt(level, pos)) {
-                        melted++;
+        // Simple melt, rewritten: every snow block and layer in a box
+        // around the player melts in clear daytime, no heightmap,
+        // no batch cap, no random shuffle. If it is day and the
+        // snow is not under a snow block, it melts one layer per
+        // second. That is the whole rule.
+        if (config.meltEnabled && level.isBrightOutside()) {
+            for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
+                for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
+                    for (int y = centre.getY() - 10; y <= centre.getY() + 10; y++) {
+                        BlockPos pos = new BlockPos(x, y, z);
+                        BlockState state = level.getBlockState(pos);
+                        if (!isSnowLayer(state) && !isSnowBlock(state)) {
+                            continue;
+                        }
+                        if (isSnowBlock(level.getBlockState(pos.above()))) {
+                            continue;
+                        }
+                        boolean heated = hasHeatNearby(level, pos, config.heatRadius);
+                        boolean bright = level.canSeeSky(pos);
+                        double chance = heated ? 1.0 : (bright ? 0.5 : 0.0);
+                        if (chance > 0.0 && level.getRandom().nextDouble() < chance) {
+                            melt(level, pos);
+                        }
                     }
                 }
             }
