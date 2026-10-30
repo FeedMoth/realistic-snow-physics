@@ -110,14 +110,20 @@ public final class SnowProcessor {
         for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
             if (dx == 0 && dz == 0) continue;
             int nx = pos.getX() + dx; int nz = pos.getZ() + dz;
+            Integer cachedGround = groundYCache.get(((long) nx << 32) | (nz & 0xffffffffL));
+            int ny;
+            if (cachedGround != null) {
+                ny = cachedGround;
+            } else {
             int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
-            int ny = topY;
+            ny = topY;
             for (int y = topY; y >= topY - 10; y--) {
                 BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
                 if (isSnow(s) || PlantStore.isPlant(s)) continue;
                 if (s.isAir()) continue;
                 if (blockId(s).endsWith("_leaves")) continue;
                 ny = y; break;
+            }
             }
             int diff = ny - groundY;
             if (diff >= 1) higher++;
@@ -149,14 +155,20 @@ public final class SnowProcessor {
         for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
             if (dx == 0 && dz == 0) continue;
             int nx = pos.getX() + dx; int nz = pos.getZ() + dz;
+            Integer cachedGround = groundYCache.get(((long) nx << 32) | (nz & 0xffffffffL));
+            int ny;
+            if (cachedGround != null) {
+                ny = cachedGround;
+            } else {
             int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
-            int ny = topY;
+            ny = topY;
             for (int y = topY; y >= topY - 10; y--) {
                 BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
                 if (isSnow(s) || PlantStore.isPlant(s)) continue;
                 if (s.isAir()) continue;
                 if (blockId(s).endsWith("_leaves")) continue;
                 ny = y; break;
+            }
             }
             int diff = ny - groundY; totalDiff += diff; count++; if (diff > maxDiff) maxDiff = diff;
         }
@@ -229,6 +241,7 @@ public final class SnowProcessor {
     }
     private static int passCounter = 0;
     private static final java.util.Map<Long, Boolean> valleyCache = new java.util.HashMap<>();
+    private static final java.util.Map<Long, Integer> groundYCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Boolean> leafCache = new java.util.HashMap<>();
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) {
@@ -238,7 +251,7 @@ public final class SnowProcessor {
         if (scale <= 0.0) return;
         passCounter++;
         if (passCounter % 30 != 0) return;
-        valleyCache.clear(); leafCache.clear();
+        valleyCache.clear(); leafCache.clear(); groundYCache.clear();
         // Wide area, extended to 128: 257x257 columns, covers nearby biomes and valleys, with per-pass caches to keep cost down.
         int wideRadius = Math.max(radius, 128);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
@@ -276,6 +289,7 @@ public final class SnowProcessor {
                             }
                             BlockPos below = lowest.below();
                             if (canHoldSnow(level, below)) {
+                                groundYCache.put(((long) x << 32) | (z & 0xffffffffL), below.getY());
                                 byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(lowest);
                                 if (leafAbove) leafCoveredSet.add(lowest.asLong());
                             }
@@ -284,6 +298,7 @@ public final class SnowProcessor {
                         BlockPos above = pos.above();
                         BlockState aboveState = level.getBlockState(above);
                         if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
+                            groundYCache.put(((long) x << 32) | (z & 0xffffffffL), pos.getY());
                             byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
                             if (leafAbove) leafCoveredSet.add(above.asLong());
                         }

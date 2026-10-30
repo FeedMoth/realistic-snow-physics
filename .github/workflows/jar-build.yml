@@ -2,7 +2,7 @@ name: jar-build
 on:
   push:
     tags:
-      - 'jar-264v'
+      - 'jar-264w'
 permissions:
   contents: write
 jobs:
@@ -25,4 +25,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
-          gh release create jar-264v "$JAR" --title "jar falling snow first version" --notes "test jar" || gh release upload jar-264v "$JAR" --clobber
+          gh release create jar-264w "$JAR" --title "jar groundY cache optimization" --notes "test jar" || gh release upload jar-264w "$JAR" --clobber
