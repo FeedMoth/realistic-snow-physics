@@ -262,7 +262,8 @@ public final class SnowProcessor {
                     boolean isTopOfSegment = (prevY == Integer.MAX_VALUE || pos.getY() != prevY - 1);
                     prevY = pos.getY();
                     if (!isTopOfSegment) continue;
-                    if (canAccumulatePrecipitation(level, pos)) continue;
+                    boolean snowingInBiome = (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || SeasonsHook.forceSnowPrecipitation();
+                    if (snowingInBiome) continue;
                     if (level.getRandom().nextDouble() < 0.15) continue;
                     boolean heated = false;
                     if (level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos) > 0) {
