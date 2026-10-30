@@ -88,7 +88,6 @@ public final class SnowProcessor {
         return state.isFaceSturdy(level, below, net.minecraft.core.Direction.UP);
     }
     public static boolean isValley(ServerLevel level, BlockPos pos) {
-        // Ground under this snow column, walking down through snow and plants
         BlockPos cursor = pos;
         for (int i = 0; i < 6; i++) {
             BlockState below = level.getBlockState(cursor.below());
@@ -96,8 +95,8 @@ public final class SnowProcessor {
             break;
         }
         int groundY = cursor.below().getY();
-        int higher = 0; int totalDiff = 0; int count = 0;
-        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+        int higher = 0; int totalDiff = 0; int count = 0; int maxDiff = -100;
+        for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
             if (dx == 0 && dz == 0) continue;
             int nx = pos.getX() + dx; int nz = pos.getZ() + dz;
             int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
@@ -105,13 +104,18 @@ public final class SnowProcessor {
             for (int y = topY; y >= topY - 10; y--) {
                 BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
                 if (isSnow(s) || PlantStore.isPlant(s)) continue;
-                if (!s.isAir()) { ny = y; break; }
+                if (s.isAir()) continue;
+                if (blockId(s).endsWith("_leaves")) continue;
+                ny = y; break;
             }
             int diff = ny - groundY;
             if (diff >= 1) higher++;
             totalDiff += diff; count++;
+            if (diff > maxDiff) maxDiff = diff;
         }
-        return higher >= 12 || (count > 0 && totalDiff / count >= 1);
+        if (count == 0) return false;
+        double avg = (double) totalDiff / count;
+        return avg >= 1.0 || (maxDiff >= 3 && avg >= 0.5) || higher >= count / 2;
     }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
@@ -180,8 +184,9 @@ public final class SnowProcessor {
         double scale = tickScale(level);
         if (scale <= 0.0) return;
         passCounter++;
-        // Wide area, not tiny chunks: use a larger radius for snow, so nearby biomes are covered too.
-        int wideRadius = Math.max(radius, 96);
+        if (passCounter % 30 != 0) return;
+        // Wide area, reduced from 96 to 64 to cut scan cost: 129x129 columns instead of 193x193, still covers nearby biomes.
+        int wideRadius = Math.max(radius, 64);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();
@@ -232,25 +237,40 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Melt: topmost snow per column only, y descending.
-        // Snow can stack past 8 layers in a column. If a lower layer drops from 8 to 7 while a layer sits on it,
-        // vanilla canSurvive fails for the upper layer, because its support is no longer full, and it breaks.
-        // Melting only the top snow per pass avoids that: upper snow is gone before lower snow is reduced.
-        if (config.meltEnabled && passCounter % 30 == 0) {
+        // Melt: topmost snow of each continuous snow segment, not just topmost in the column.
+        // A column can have leaf snow on top of leaves and ground snow below leaves, separated by leaves.
+        // Melting only the first segment left ground snow under leaves never melting, so it grew to the leaves.
+        // Now each segment melts independently, so snow touching leaves melts too.
+        // Reuses allSnow from the heightmap scan, no second direct box scan, which was a major overload cause.
+        // Randomization: 15% skip per segment per melt pass, same as accumulation.
+        if (config.meltEnabled) {
             boolean day = level.isBrightOutside();
-            for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
-                for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
-                    BlockPos top = null;
-                    for (int y = centre.getY() + 20; y >= centre.getY() - 20; y--) {
-                        BlockPos pos = new BlockPos(x, y, z);
-                        if (isSnow(level.getBlockState(pos))) { top = pos; break; }
+            // Group allSnow by column, sort y descending, melt top of each continuous run
+            java.util.Map<Long, java.util.ArrayList<BlockPos>> byCol = new java.util.HashMap<>();
+            for (BlockPos pos : allSnow) {
+                long key = ((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL);
+                byCol.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(pos);
+            }
+            for (java.util.ArrayList<BlockPos> col : byCol.values()) {
+                col.sort((a, b) -> Integer.compare(b.getY(), a.getY()));
+                int prevY = Integer.MAX_VALUE;
+                for (BlockPos pos : col) {
+                    if (prevY != Integer.MAX_VALUE && pos.getY() != prevY - 1) {
+                        // Gap in snow, this is start of a new segment below, melt its top too, then continue to next segment
+                        // Actually we want top of each segment, so melt this pos if it is top of its segment, which it is after a gap
                     }
-                    if (top == null) continue;
-                    if (canAccumulatePrecipitation(level, top)) continue;
-                    boolean heated = hasHeatNearby(level, top, config.heatRadius);
-                    if (heated) { melt(level, top); continue; }
+                    boolean isTopOfSegment = (prevY == Integer.MAX_VALUE || pos.getY() != prevY - 1);
+                    prevY = pos.getY();
+                    if (!isTopOfSegment) continue;
+                    if (canAccumulatePrecipitation(level, pos)) continue;
+                    if (level.getRandom().nextDouble() < 0.15) continue;
+                    boolean heated = false;
+                    if (level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos) > 0) {
+                        heated = hasHeatNearby(level, pos, config.heatRadius);
+                    }
+                    if (heated) { melt(level, pos); continue; }
                     if (!day) continue;
-                    melt(level, top);
+                    melt(level, pos);
                 }
             }
         }
@@ -303,6 +323,11 @@ public final class SnowProcessor {
             if (!canAccumulatePrecipitation(level, pos) && !(leafPass && (leafCoveredSet.contains(pos.asLong()) || canAccumulateUnderLeaves(level, pos)))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
+            if (leafCoveredSet.contains(pos.asLong())) {
+                BlockState st = level.getBlockState(pos);
+                if (isSnowBlock(st)) continue;
+                if (isSnowLayer(st) && st.getValue(SnowLayerBlock.LAYERS) >= 8) continue;
+            }
             if (level.getRandom().nextDouble() < 0.15) continue;
             accumulate(level, pos);
         }
