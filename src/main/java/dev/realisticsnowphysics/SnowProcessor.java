@@ -144,7 +144,13 @@ public final class SnowProcessor {
             }
             int diff = ny - groundY; totalDiff += diff; count++; if (diff > maxDiff) maxDiff = diff;
         }
-        return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos);
+        int snowDepthLayers = 0; int snowBlocks = 0;
+        for (int y = pos.getY() + 10; y >= groundY; y--) {
+            BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
+            if (isSnowBlock(s)) { snowBlocks++; snowDepthLayers += 8; }
+            else if (isSnowLayer(s)) { snowDepthLayers += s.getValue(SnowLayerBlock.LAYERS); }
+        }
+        return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos) + " snowDepthLayers=" + snowDepthLayers + " snowBlocks=" + snowBlocks;
     }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
@@ -154,8 +160,8 @@ public final class SnowProcessor {
             if (layers >= max) {
                 if (!isValley(level, pos)) return false;
                 int snowBlocksBelow = 0; BlockPos cursor = pos.below();
-                for (int i = 0; i < 3; i++) { if (isSnowBlock(level.getBlockState(cursor))) { snowBlocksBelow++; cursor = cursor.below(); } else break; }
-                if (snowBlocksBelow >= 3) return false;
+                for (int i = 0; i < 8; i++) { if (isSnowBlock(level.getBlockState(cursor))) { snowBlocksBelow++; cursor = cursor.below(); } else break; }
+                if (snowBlocksBelow >= 8) return false;
                 level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 3); return true;
             }
             level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers + 1), 3); return true;
