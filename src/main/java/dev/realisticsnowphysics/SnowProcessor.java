@@ -366,8 +366,7 @@ public final class SnowProcessor {
         // Full snow blocks melt first, otherwise a field of thin layers
         // starves them: the melt batch is spent on low columns before a
         // single full block on a hill is ever rolled.
-        java.util.Collections.shuffle(snowPositions, new java.util.Random(level.getRandom().nextLong()));
-        snowPositions.sort((a, b) -> Boolean.compare(!isSnowBlock(level.getBlockState(a)), !isSnowBlock(level.getBlockState(b))));
+        snowPositions.sort((a, b) -> Double.compare(a.distSqr(centre), b.distSqr(centre)));
         if (config.meltEnabled) {
             int melted = 0;
             int meltBatch = meltBatchScaled;
