@@ -256,6 +256,9 @@ public final class SnowProcessor {
      */
     public static boolean melt(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
+        if (isSnowBlock(level.getBlockState(pos.above()))) {
+            return false;
+        }
         if (isSnowLayer(state)) {
             int layers = state.getValue(SnowLayerBlock.LAYERS);
             if (layers <= 1) {
@@ -321,23 +324,35 @@ public final class SnowProcessor {
                 if (processedColumns.contains(columnKey)) {
                     continue;
                 }
-                BlockPos surface = level.getHeightmapPos(
-                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, new BlockPos(x, 0, z));
+                // Top-down scan, not heightmap trust: find the topmost snow
+                // in this column, layer or full block, whatever the
+                // heightmap thinks the surface is. All snow melts, period.
+                int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
                 BlockPos snowPos = null;
-                if (isSnowLayer(level.getBlockState(surface)) || isSnowBlock(level.getBlockState(surface))) {
-                    snowPos = surface;
-                } else if (isSnowLayer(level.getBlockState(surface.above()))
-                        || isSnowBlock(level.getBlockState(surface.above()))) {
-                    snowPos = surface.above();
+                BlockPos groundPos = null;
+                for (int y = topY; y >= topY - 6 && y >= level.getMinY(); y--) {
+                    BlockPos candidate = new BlockPos(x, y, z);
+                    BlockState candidateState = level.getBlockState(candidate);
+                    if (isSnowLayer(candidateState) || isSnowBlock(candidateState)) {
+                        snowPos = candidate;
+                        break;
+                    }
+                    if (!candidateState.isAir()) {
+                        groundPos = candidate;
+                        break;
+                    }
                 }
                 if (snowPos != null) {
                     snowPositions.add(snowPos);
                     snowHeights.add(snowPos.getY());
                     continue;
                 }
-                BlockPos bare = surface.above();
+                if (groundPos == null) {
+                    groundPos = new BlockPos(x, topY, z);
+                }
+                BlockPos bare = groundPos.above();
                 BlockState bareState = level.getBlockState(bare);
-                if ((bareState.isAir() || PlantStore.isPlant(bareState)) && canHoldSnow(level, surface)) {
+                if ((bareState.isAir() || PlantStore.isPlant(bareState)) && canHoldSnow(level, groundPos)) {
                     barePositions.add(bare);
                     bareHeights.add(bare.getY());
                 }
