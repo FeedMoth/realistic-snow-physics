@@ -246,15 +246,15 @@ public final class SnowProcessor {
     private static final java.util.Map<Long, Integer> groundYCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Boolean> leafCache = new java.util.HashMap<>();
     public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
-    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) { processAreaBanded(level, centre, radius, centre.getX() - Math.max(radius, 64), centre.getX() + Math.max(radius, 64)); }
+    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) { processAreaBanded(level, centre, radius, centre.getX() - Math.max(radius, 128), centre.getX() + Math.max(radius, 128)); }
     // Staggered: one band per tick, 30 bands per 30-second cycle, so a full 129x129 scan is spread over 30 ticks instead of 1 tick. Each column still gets 1 layer per 30s cycle, work is just spread out.
     public static void tickStaggered(ServerLevel level, BlockPos centre, long tickCount) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         if (!config.enabled) return;
         if (tickScale(level) <= 0.0) return;
-        int wideRadius = Math.max(config.sampleRadius, 64);
+        int wideRadius = Math.max(config.sampleRadius, 128);
         int totalWidth = wideRadius * 2 + 1;
-        int bandCount = 30;
+        int bandCount = 120;
         int bandWidth = (totalWidth + bandCount - 1) / bandCount;
         if (tickCount % 600 == 0) { staggeredBand = 0; staggeredCycleTick = tickCount; }
         if (staggeredBand >= bandCount) return;
@@ -270,7 +270,7 @@ public final class SnowProcessor {
         if (scale <= 0.0) return;
         passCounter++;
         valleyCache.clear(); leafCache.clear(); groundYCache.clear();
-        int wideRadius = Math.max(radius, 64);
+        int wideRadius = Math.max(radius, 128);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();

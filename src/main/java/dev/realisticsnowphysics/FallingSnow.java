@@ -20,7 +20,7 @@ public final class FallingSnow {
         queues.computeIfAbsent(level, k -> new ArrayDeque<>()).add(pos.immutable());
     }
 
-    public static void processQueue(ServerLevel level) { processQueue(level, 1); }
+    public static void processQueue(ServerLevel level) { processQueue(level, 4); }
 
     public static void processQueue(ServerLevel level, int max) {
         ArrayDeque<BlockPos> q = queues.get(level);
@@ -28,7 +28,7 @@ public final class FallingSnow {
         int spawned = 0;
         int attempts = 0;
         long startNanos = System.nanoTime();
-        while (!q.isEmpty() && spawned < max && attempts < 10) {
+        while (!q.isEmpty() && spawned < max && attempts < 20) {
             attempts++;
             if (System.nanoTime() - startNanos > 50_000_000L) break;
             BlockPos pos = q.poll();
