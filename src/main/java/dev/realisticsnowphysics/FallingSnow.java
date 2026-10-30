@@ -44,7 +44,7 @@ public final class FallingSnow {
         return false;
     }
 
-    public static void processQueue(ServerLevel level) { processQueue(level, 4); }
+    public static void processQueue(ServerLevel level) { processQueue(level, Math.max(1, RealisticSnowPhysicsConfig.get().fallingMaxPerTick)); }
 
     public static void processQueue(ServerLevel level, int max) {
         ArrayDeque<BlockPos> q = queues.get(level);
@@ -55,7 +55,7 @@ public final class FallingSnow {
         long startNanos = System.nanoTime();
         while (!q.isEmpty() && spawned < max && attempts < 20) {
             attempts++;
-            if (System.nanoTime() - startNanos > 5_000_000L) break;
+            if (System.nanoTime() - startNanos > Math.max(1, RealisticSnowPhysicsConfig.get().fallingBudgetMillis) * 1_000_000L) break;
             BlockPos pos = q.poll();
             Set<Long> set = queuedSet.get(level);
             if (set != null) set.remove(pos.asLong());

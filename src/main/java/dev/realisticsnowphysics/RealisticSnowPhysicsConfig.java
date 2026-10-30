@@ -35,6 +35,20 @@ public final class RealisticSnowPhysicsConfig {
     /** Maximum snow layers on one block. Vanilla snow layers go to 8. */
     public int maxLayers = 8;
 
+    /** Async pipeline tuning, 0.5 / 264al and later. All of these are
+     * live-tuned by /realistic-snow-physics reload, no restart needed
+     * for the next cycle. Lower them on a rough server, raise them
+     * on a strong one. Defaults are the 264al values that held
+     * 20 TPS at 2-3 ms/tick in testing. */
+    public int asyncRadius = 256;
+    public int asyncBandCount = 320;
+    public int asyncApplyMaxPerTick = 200;
+    public int asyncApplyBudgetMillis = 2;
+    public int asyncSnapshotBudgetMillis = 2;
+    public int asyncCycleTicks = 600;
+    public int fallingMaxPerTick = 4;
+    public int fallingBudgetMillis = 5;
+
     /** Chance, per sample, that a qualifying snowfall position gains a layer. */
     public double accumulationChance = 0.6;
 
@@ -86,6 +100,14 @@ public final class RealisticSnowPhysicsConfig {
                 RealisticSnowPhysicsConfig loaded = GSON.fromJson(Files.readString(path), RealisticSnowPhysicsConfig.class);
                 if (loaded != null) {
                     instance = loaded;
+                    if (instance.asyncRadius <= 0) instance.asyncRadius = 256;
+                    if (instance.asyncBandCount <= 0) instance.asyncBandCount = 320;
+                    if (instance.asyncApplyMaxPerTick <= 0) instance.asyncApplyMaxPerTick = 200;
+                    if (instance.asyncApplyBudgetMillis <= 0) instance.asyncApplyBudgetMillis = 2;
+                    if (instance.asyncSnapshotBudgetMillis <= 0) instance.asyncSnapshotBudgetMillis = 2;
+                    if (instance.asyncCycleTicks <= 0) instance.asyncCycleTicks = 600;
+                    if (instance.fallingMaxPerTick <= 0) instance.fallingMaxPerTick = 4;
+                    if (instance.fallingBudgetMillis <= 0) instance.fallingBudgetMillis = 5;
                 }
                 RealisticSnowPhysicsMod.LOGGER.info("[Realistic Snow Physics] config loaded from {}", path);
             } else {

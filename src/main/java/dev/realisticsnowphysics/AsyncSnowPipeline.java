@@ -131,8 +131,8 @@ public final class AsyncSnowPipeline {
     private static Snapshot snapshot;
     private static int snapshotBand;
     private static int snapX, snapZ, snapBandEndX;
-    private static final int BAND_COUNT = 320;
-    private static final int RADIUS = 256;
+    private static int bandCount() { return Math.max(1, RealisticSnowPhysicsConfig.get().asyncBandCount); }
+    private static int radius() { return Math.max(16, RealisticSnowPhysicsConfig.get().asyncRadius); }
     private static Future<List<Change>> workerFuture;
     private static List<Change> pendingChanges;
     private static int applyIndex;
@@ -205,11 +205,11 @@ public final class AsyncSnowPipeline {
         if (SnowProcessor.tickScale(level) <= 0.0) return;
         switch (state) {
             case IDLE -> {
-                if (tickCount - lastCycleStart < 600) return;
+                if (tickCount - lastCycleStart < Math.max(20, RealisticSnowPhysicsConfig.get().asyncCycleTicks)) return;
                 snapshotLevel = level;
                 snapshot = new Snapshot();
                 snapshot.centre = centre.immutable();
-                snapshot.radius = RADIUS;
+                snapshot.radius = radius();
                 lastCycleStart = tickCount;
                 snapshot.cycleTick = tickCount;
                 snapshot.leafPass = (tickCount / 600) % 2 == 0;
@@ -217,7 +217,7 @@ public final class AsyncSnowPipeline {
                 snapshot.maxLayers = RealisticSnowPhysicsConfig.get().maxLayers;
                 snapshot.meltEnabled = RealisticSnowPhysicsConfig.get().meltEnabled;
                 snapshot.accumulationEnabled = RealisticSnowPhysicsConfig.get().accumulationEnabled;
-                snapshotBand = 0; snapX = snapshot.centre.getX() - RADIUS - 6; snapZ = snapshot.centre.getZ() - RADIUS - 6; snapBandEndX = snapX + ((RADIUS + 6) * 2 + 1 + BAND_COUNT - 1) / BAND_COUNT - 1;
+                snapshotBand = 0; snapX = snapshot.centre.getX() - snapshot.radius - 6; snapZ = snapshot.centre.getZ() - snapshot.radius - 6; snapBandEndX = snapX + ((snapshot.radius + 6) * 2 + 1 + bandCount() - 1) / bandCount() - 1;
                 state = State.SNAPSHOT;
             }
             case SNAPSHOT -> snapshotBand(level);
@@ -249,15 +249,15 @@ public final class AsyncSnowPipeline {
         int radius = snapshot.radius;
         int border = 6;
         int totalWidth = (radius + border) * 2 + 1;
-        int bandWidth = (totalWidth + BAND_COUNT - 1) / BAND_COUNT;
+        int bandWidth = (totalWidth + bandCount() - 1) / bandCount();
         float tempOffset = SeasonsHook.temperatureOffset();
         boolean forceSnow = SeasonsHook.forceSnowPrecipitation();
         int heatRadius = RealisticSnowPhysicsConfig.get().heatRadius;
         Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunkCache = new HashMap<>();
-        while (snapshotBand < BAND_COUNT) {
+        while (snapshotBand < bandCount()) {
             if (snapX > snapBandEndX) {
                 snapshotBand++;
-                if (snapshotBand >= BAND_COUNT) break;
+                if (snapshotBand >= bandCount()) break;
                 int bx = snapshot.centre.getX() - radius - border + snapshotBand * bandWidth;
                 snapX = bx; snapBandEndX = Math.min(snapshot.centre.getX() + radius + border, bx + bandWidth - 1);
                 snapZ = snapshot.centre.getZ() - radius - border;
@@ -268,7 +268,7 @@ public final class AsyncSnowPipeline {
             snapZ++;
             if (snapZ > snapshot.centre.getZ() + radius + border) { snapZ = snapshot.centre.getZ() - radius - border; snapX++; }
             if (!level.isLoaded(new BlockPos(x, snapshot.centre.getY(), z))) {
-                if (System.nanoTime() - startNanos > 2_000_000L) return;
+                if (System.nanoTime() - startNanos > Math.max(1, RealisticSnowPhysicsConfig.get().asyncSnapshotBudgetMillis) * 1_000_000L) return;
                 continue;
             }
             long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
@@ -284,7 +284,7 @@ public final class AsyncSnowPipeline {
             }
             snapshot.groundY.put(colKey(x, z), valleyGround);
             if (Math.abs(x - snapshot.centre.getX()) > radius || Math.abs(z - snapshot.centre.getZ()) > radius) {
-                if (System.nanoTime() - startNanos > 2_000_000L) return;
+                if (System.nanoTime() - startNanos > Math.max(1, RealisticSnowPhysicsConfig.get().asyncSnapshotBudgetMillis) * 1_000_000L) return;
                 continue;
             }
             // Per-column biome/snowing, computed once, not per snow record.
@@ -339,9 +339,9 @@ public final class AsyncSnowPipeline {
                 }
                 break;
             }
-            if (System.nanoTime() - startNanos > 2_000_000L) return;
+            if (System.nanoTime() - startNanos > Math.max(1, RealisticSnowPhysicsConfig.get().asyncSnapshotBudgetMillis) * 1_000_000L) return;
         }
-        if (snapshotBand >= BAND_COUNT) {
+        if (snapshotBand >= bandCount()) {
             Snapshot done = snapshot;
             state = State.WORKING;
             workerFuture = WORKER.submit(() -> computeChanges(done));
@@ -573,8 +573,8 @@ public final class AsyncSnowPipeline {
         long start = System.nanoTime();
         int appliedThisTick = 0;
         while (applyIndex < pendingChanges.size()) {
-            if (appliedThisTick >= 200) return;
-            if (System.nanoTime() - start > 2_000_000L) return; // resume next tick, under 2 ms
+            if (appliedThisTick >= Math.max(1, RealisticSnowPhysicsConfig.get().asyncApplyMaxPerTick)) return;
+            if (System.nanoTime() - start > Math.max(1, RealisticSnowPhysicsConfig.get().asyncApplyBudgetMillis) * 1_000_000L) return; // resume next tick
             appliedThisTick++;
             Change c = pendingChanges.get(applyIndex++);
             BlockPos pos = new BlockPos(c.x, c.y, c.z);
