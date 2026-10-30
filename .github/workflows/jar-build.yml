@@ -1,0 +1,32 @@
+name: jar-build
+on:
+  push:
+    tags:
+      - 'port-1.20.1-jar'
+permissions:
+  contents: write
+jobs:
+  jar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+      - run: chmod +x ./gradlew
+      - run: ./gradlew build 2>&1 | tee build-log.txt; test ${PIPESTATUS[0]} -eq 0
+      - if: always()
+        run: |
+          git config user.name "FeedMoth"
+          git config user.email "FeedMoth@users.noreply.github.com"
+          git checkout -B ci-log-1.20.1
+          git add build-log.txt || true
+          git commit -m "CI log" || true
+          git push -f origin ci-log-1.20.1 || true
+      - if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/realistic-snow-physics-*.jar | grep -v -e '-sources.jar' -e '-dev.jar' | head -1)
+          gh release create port-1.20.1-jar "$JAR" --title "port 1.20.1 test jar" --notes "test jar" || gh release upload port-1.20.1-jar "$JAR" --clobber

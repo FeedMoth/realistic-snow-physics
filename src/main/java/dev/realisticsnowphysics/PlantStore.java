@@ -10,13 +10,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.World;
+import net.minecraft.block.Block;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.BlockState;
 
 /**
  * Remembers plants buried under snow, so they can come back when the
@@ -92,13 +92,13 @@ public final class PlantStore {
         return dimension + "|" + x + "|" + y + "|" + z;
     }
 
-    private static String dimensionOf(Level level) {
-        ResourceKey<Level> key = level.dimension();
-        return key == null ? "minecraft:overworld" : key.identifier().toString();
+    private static String dimensionOf(World level) {
+        RegistryKey<World> key = level.getRegistryKey();
+        return key == null ? "minecraft:overworld" : key.getValue().toString();
     }
 
     public static String blockId(BlockState state) {
-        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        return Registries.BLOCK.getId(state.getBlock()).toString();
     }
 
     public static boolean isCrop(BlockState state) {
@@ -150,7 +150,7 @@ public final class PlantStore {
                 || id.equals("minecraft:rose_bush") || id.equals("minecraft:peony");
     }
 
-    public static synchronized void store(Level level, BlockPos pos, BlockState state) {
+    public static synchronized void store(World level, BlockPos pos, BlockState state) {
         load();
         StoredPlant plant = new StoredPlant();
         plant.dimension = dimensionOf(level);
@@ -166,7 +166,7 @@ public final class PlantStore {
         dirty = true;
     }
 
-    public static synchronized StoredPlant take(Level level, BlockPos pos) {
+    public static synchronized StoredPlant take(World level, BlockPos pos) {
         load();
         StoredPlant plant = PLANTS.remove(key(dimensionOf(level), pos.getX(), pos.getY(), pos.getZ()));
         if (plant != null) {
@@ -175,20 +175,20 @@ public final class PlantStore {
         return plant;
     }
 
-    public static synchronized StoredPlant peek(Level level, BlockPos pos) {
+    public static synchronized StoredPlant peek(World level, BlockPos pos) {
         load();
         return PLANTS.get(key(dimensionOf(level), pos.getX(), pos.getY(), pos.getZ()));
     }
 
     public static BlockState restoreState(StoredPlant plant) {
-        Block block = BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(plant.block));
+        Block block = Registries.BLOCK.get(net.minecraft.util.Identifier.of(plant.block));
         if (block == null || block == Blocks.AIR) {
             return null;
         }
-        BlockState state = block.defaultBlockState();
-        if (isTallPlant(state) && state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF)) {
-            state = state.setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF,
-                    net.minecraft.world.level.block.state.properties.DoubleBlockHalf.LOWER);
+        BlockState state = block.getDefaultState();
+        if (isTallPlant(state) && state.contains(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF)) {
+            state = state.with(net.minecraft.state.property.Properties.DOUBLE_BLOCK_HALF,
+                    net.minecraft.block.enums.DoubleBlockHalf.LOWER);
         }
         return state;
     }

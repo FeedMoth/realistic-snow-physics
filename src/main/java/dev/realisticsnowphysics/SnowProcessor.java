@@ -1,18 +1,18 @@
 package dev.realisticsnowphysics;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CampfireBlock;
-import net.minecraft.world.level.block.SnowLayerBlock;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.registry.Registries;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.CampfireBlock;
+import net.minecraft.block.SnowBlock;
+import net.minecraft.block.BlockState;
+import net.minecraft.state.property.Properties;
 
 public final class SnowProcessor {
     private SnowProcessor() {}
     public static String blockId(BlockState state) {
-        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        return Registries.BLOCK.getId(state.getBlock()).toString();
     }
     public static boolean isSnowLayer(BlockState state) {
         return "minecraft:snow".equals(blockId(state));
@@ -26,15 +26,15 @@ public final class SnowProcessor {
     private static int heatRadiusFor(BlockState state, int strongRadius, int weakRadius) {
         String id = blockId(state);
         if (id.equals("minecraft:lava") || id.equals("minecraft:fire") || id.equals("minecraft:soul_fire") || id.equals("minecraft:magma_block")) return strongRadius;
-        if (id.equals("minecraft:campfire") || id.equals("minecraft:soul_campfire")) return state.hasProperty(CampfireBlock.LIT) && state.getValue(CampfireBlock.LIT) ? strongRadius : 0;
-        if (id.equals("minecraft:furnace") || id.equals("minecraft:blast_furnace") || id.equals("minecraft:smoker")) return state.hasProperty(BlockStateProperties.LIT) && state.getValue(BlockStateProperties.LIT) ? strongRadius : 0;
+        if (id.equals("minecraft:campfire") || id.equals("minecraft:soul_campfire")) return state.contains(CampfireBlock.LIT) && state.get(CampfireBlock.LIT) ? strongRadius : 0;
+        if (id.equals("minecraft:furnace") || id.equals("minecraft:blast_furnace") || id.equals("minecraft:smoker")) return state.contains(Properties.LIT) && state.get(Properties.LIT) ? strongRadius : 0;
         if (id.equals("minecraft:torch") || id.equals("minecraft:wall_torch") || id.equals("minecraft:lantern") || id.equals("minecraft:glowstone") || id.equals("minecraft:jack_o_lantern")) return weakRadius;
         return 0;
     }
-    public static boolean hasHeatNearby(ServerLevel level, BlockPos pos, int radius) {
+    public static boolean hasHeatNearby(ServerWorld level, BlockPos pos, int radius) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         int weakRadius = Math.max(1, config.torchHeatRadius);
-        for (BlockPos candidate : BlockPos.betweenClosed(pos.getX() - radius, pos.getY() - radius, pos.getZ() - radius, pos.getX() + radius, pos.getY() + radius, pos.getZ() + radius)) {
+        for (BlockPos candidate : BlockPos.iterate(pos.getX() - radius, pos.getY() - radius, pos.getZ() - radius, pos.getX() + radius, pos.getY() + radius, pos.getZ() + radius)) {
             int reach = heatRadiusFor(level.getBlockState(candidate), radius, weakRadius);
             if (reach <= 0) continue;
             int dx = Math.abs(candidate.getX() - pos.getX());
@@ -44,30 +44,30 @@ public final class SnowProcessor {
         }
         return false;
     }
-    public static float effectiveTemperature(ServerLevel level, BlockPos pos) {
-        return level.getBiome(pos).value().getBaseTemperature() + SeasonsHook.temperatureOffset();
+    public static float effectiveTemperature(ServerWorld level, BlockPos pos) {
+        return level.getBiome(pos).value().getTemperature() + SeasonsHook.temperatureOffset();
     }
-    public static double tickScale(ServerLevel level) {
+    public static double tickScale(ServerWorld level) {
         try {
-            int speed = level.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED);
+            int speed = level.getGameRules().getInt(net.minecraft.world.GameRules.RANDOM_TICK_SPEED);
             return speed <= 0 ? 0.0 : speed / 3.0;
         } catch (Exception e) { return 1.0; }
     }
-    public static boolean isSnowing(ServerLevel level, BlockPos pos) {
-        return level.isRaining() && level.canSeeSky(pos) && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f;
+    public static boolean isSnowing(ServerWorld level, BlockPos pos) {
+        return level.isRaining() && level.isSkyVisible(pos) && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f;
     }
-    public static boolean isSnowingInBiome(ServerLevel level, BlockPos pos) {
+    public static boolean isSnowingInBiome(ServerWorld level, BlockPos pos) {
         return (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || SeasonsHook.forceSnowPrecipitation();
     }
-    public static boolean isForcedSnowPrecipitation(ServerLevel level, BlockPos pos) {
+    public static boolean isForcedSnowPrecipitation(ServerWorld level, BlockPos pos) {
         if (!SeasonsHook.forceSnowPrecipitation()) return false;
-        if (!level.isRaining() || !level.canSeeSky(pos)) return false;
+        if (!level.isRaining() || !level.isSkyVisible(pos)) return false;
         return level.getBiome(pos).value().hasPrecipitation();
     }
-    public static boolean canAccumulatePrecipitation(ServerLevel level, BlockPos pos) {
+    public static boolean canAccumulatePrecipitation(ServerWorld level, BlockPos pos) {
         return isSnowing(level, pos) || isForcedSnowPrecipitation(level, pos);
     }
-    public static boolean isLeafCoveredUncached(ServerLevel level, BlockPos pos) {
+    public static boolean isLeafCoveredUncached(ServerWorld level, BlockPos pos) {
         for (int y = pos.getY() + 1; y <= pos.getY() + 20; y++) {
             BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
             if (s.isAir()) continue;
@@ -77,7 +77,7 @@ public final class SnowProcessor {
         }
         return false;
     }
-    public static boolean isLeafCovered(ServerLevel level, BlockPos pos) {
+    public static boolean isLeafCovered(ServerWorld level, BlockPos pos) {
         long k = pos.asLong();
         Boolean cached = leafCache.get(k);
         if (cached != null) return cached;
@@ -85,27 +85,27 @@ public final class SnowProcessor {
         leafCache.put(k, v);
         return v;
     }
-    public static boolean canAccumulateUnderLeaves(ServerLevel level, BlockPos pos) {
+    public static boolean canAccumulateUnderLeaves(ServerWorld level, BlockPos pos) {
         boolean snowing = (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || isForcedSnowPrecipitation(level, pos);
         if (!snowing) return false;
-        if (level.canSeeSky(pos)) return false;
+        if (level.isSkyVisible(pos)) return false;
         return isLeafCovered(level, pos);
     }
-    private static boolean canHoldSnow(ServerLevel level, BlockPos below) {
+    private static boolean canHoldSnow(ServerWorld level, BlockPos below) {
         BlockState state = level.getBlockState(below);
         if (state.isAir()) return false;
         String id = blockId(state);
         if (id.equals("minecraft:water") || id.equals("minecraft:ice") || id.equals("minecraft:packed_ice") || id.equals("minecraft:blue_ice") || id.equals("minecraft:powder_snow")) return false;
-        return state.isFaceSturdy(level, below, net.minecraft.core.Direction.UP);
+        return state.isSideSolidFullSquare(level, below, net.minecraft.util.math.Direction.UP);
     }
-    public static boolean isValleyUncached(ServerLevel level, BlockPos pos) {
+    public static boolean isValleyUncached(ServerWorld level, BlockPos pos) {
         BlockPos cursor = pos;
         for (int i = 0; i < 6; i++) {
-            BlockState below = level.getBlockState(cursor.below());
-            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.below(); continue; }
+            BlockState below = level.getBlockState(cursor.down());
+            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.down(); continue; }
             break;
         }
-        int groundY = cursor.below().getY();
+        int groundY = cursor.down().getY();
         int higher = 0; int totalDiff = 0; int count = 0; int maxDiff = -100;
         for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
             if (dx == 0 && dz == 0) continue;
@@ -115,7 +115,7 @@ public final class SnowProcessor {
             if (cachedGround != null) {
                 ny = cachedGround;
             } else {
-            int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
+            int topY = level.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, nx, nz);
             ny = topY;
             for (int y = topY; y >= topY - 10; y--) {
                 BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
@@ -135,7 +135,7 @@ public final class SnowProcessor {
         // Old avg>=1 rule failed for small pits and wide valley floors, where most neighbours are flat and only walls are higher.
         return maxDiff >= 1 && totalDiff >= 0;
     }
-    public static boolean isValley(ServerLevel level, BlockPos pos) {
+    public static boolean isValley(ServerWorld level, BlockPos pos) {
         long k = pos.asLong();
         Boolean cached = valleyCache.get(k);
         if (cached != null) return cached;
@@ -143,14 +143,14 @@ public final class SnowProcessor {
         valleyCache.put(k, v);
         return v;
     }
-    public static String valleyDiagnose(ServerLevel level, BlockPos pos) {
+    public static String valleyDiagnose(ServerWorld level, BlockPos pos) {
         BlockPos cursor = pos;
         for (int i = 0; i < 6; i++) {
-            BlockState below = level.getBlockState(cursor.below());
-            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.below(); continue; }
+            BlockState below = level.getBlockState(cursor.down());
+            if (isSnow(below) || PlantStore.isPlant(below)) { cursor = cursor.down(); continue; }
             break;
         }
-        int groundY = cursor.below().getY();
+        int groundY = cursor.down().getY();
         int maxDiff = -100; int totalDiff = 0; int count = 0;
         for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) {
             if (dx == 0 && dz == 0) continue;
@@ -160,7 +160,7 @@ public final class SnowProcessor {
             if (cachedGround != null) {
                 ny = cachedGround;
             } else {
-            int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, nx, nz);
+            int topY = level.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, nx, nz);
             ny = topY;
             for (int y = topY; y >= topY - 10; y--) {
                 BlockState s = level.getBlockState(new BlockPos(nx, y, nz));
@@ -176,66 +176,66 @@ public final class SnowProcessor {
         for (int y = pos.getY() + 10; y >= groundY; y--) {
             BlockState s = level.getBlockState(new BlockPos(pos.getX(), y, pos.getZ()));
             if (isSnowBlock(s)) { snowBlocks++; snowDepthLayers += 8; if (topSnow.equals("none")) topSnow = "block@" + y; }
-            else if (isSnowLayer(s)) { snowDepthLayers += s.getValue(SnowLayerBlock.LAYERS); if (topSnow.equals("none")) topSnow = "layers" + s.getValue(SnowLayerBlock.LAYERS) + "@" + y + " canSeeSky=" + level.canSeeSky(new BlockPos(pos.getX(), y, pos.getZ())) + " canAccum=" + canAccumulatePrecipitation(level, new BlockPos(pos.getX(), y, pos.getZ())) + " isValleyAtSnow=" + isValley(level, new BlockPos(pos.getX(), y, pos.getZ())); }
+            else if (isSnowLayer(s)) { snowDepthLayers += s.get(SnowBlock.LAYERS); if (topSnow.equals("none")) topSnow = "layers" + s.get(SnowBlock.LAYERS) + "@" + y + " canSeeSky=" + level.isSkyVisible(new BlockPos(pos.getX(), y, pos.getZ())) + " canAccum=" + canAccumulatePrecipitation(level, new BlockPos(pos.getX(), y, pos.getZ())) + " isValleyAtSnow=" + isValley(level, new BlockPos(pos.getX(), y, pos.getZ())); }
         }
         return "groundY=" + groundY + " maxDiff=" + maxDiff + " totalDiff=" + totalDiff + " count=" + count + " isValley=" + isValley(level, pos) + " leafCovered=" + isLeafCovered(level, pos) + " snowingInBiome=" + isSnowingInBiome(level, pos) + " raining=" + level.isRaining() + " biomeTemp=" + effectiveTemperature(level, pos) + " snowDepthLayers=" + snowDepthLayers + " snowBlocks=" + snowBlocks + " topSnow=" + topSnow;
     }
-    public static boolean accumulate(ServerLevel level, BlockPos pos) {
+    public static boolean accumulate(ServerWorld level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (isSnowLayer(state)) {
-            int layers = state.getValue(SnowLayerBlock.LAYERS);
+            int layers = state.get(SnowBlock.LAYERS);
             int max = RealisticSnowPhysicsConfig.get().maxLayers;
             if (layers >= max) {
                 if (!isValley(level, pos)) return false;
-                int snowBlocksBelow = 0; BlockPos cursor = pos.below();
-                for (int i = 0; i < 8; i++) { if (isSnowBlock(level.getBlockState(cursor))) { snowBlocksBelow++; cursor = cursor.below(); } else break; }
+                int snowBlocksBelow = 0; BlockPos cursor = pos.down();
+                for (int i = 0; i < 8; i++) { if (isSnowBlock(level.getBlockState(cursor))) { snowBlocksBelow++; cursor = cursor.down(); } else break; }
                 if (snowBlocksBelow >= 8) return false;
-                level.setBlock(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 3); return true;
+                level.setBlockState(pos, Blocks.SNOW_BLOCK.getDefaultState(), 3); return true;
             }
-            level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers + 1), 3); return true;
+            level.setBlockState(pos, state.with(SnowBlock.LAYERS, layers + 1), 3); return true;
         }
         if (isSnowBlock(state)) {
-            BlockPos above = pos.above();
+            BlockPos above = pos.up();
             if (!level.getBlockState(above).isAir()) return false;
             return accumulate(level, above);
         }
         if (!state.isAir() && !PlantStore.isPlant(state)) return false;
-        BlockPos below = pos.below();
+        BlockPos below = pos.down();
         if (!canHoldSnow(level, below)) return false;
         BlockState current = level.getBlockState(pos);
         if (PlantStore.isPlant(current)) {
             PlantStore.store(level, pos, current);
-            if (PlantStore.isTallPlant(current)) level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3);
+            if (PlantStore.isTallPlant(current)) level.setBlockState(pos.up(), Blocks.AIR.getDefaultState(), 3);
         } else if (!current.isAir()) return false;
-        level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, 1), 3); return true;
+        level.setBlockState(pos, Blocks.SNOW.getDefaultState().with(SnowBlock.LAYERS, 1), 3); return true;
     }
-    public static boolean melt(ServerLevel level, BlockPos pos) {
+    public static boolean melt(ServerWorld level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
-        if (isSnow(level.getBlockState(pos.above()))) return false;
+        if (isSnow(level.getBlockState(pos.up()))) return false;
         if (isSnowLayer(state)) {
-            int layers = state.getValue(SnowLayerBlock.LAYERS);
+            int layers = state.get(SnowBlock.LAYERS);
             if (layers <= 1) {
                 PlantStore.StoredPlant plant = PlantStore.take(level, pos);
                 if (plant != null) {
                     BlockState restored = PlantStore.restoreState(plant);
                     if (restored != null) {
-                        level.setBlock(pos, restored, 3);
-                        if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
-                            BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
-                            level.setBlock(pos.above(), upper, 3);
+                        level.setBlockState(pos, restored, 3);
+                        if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.up()).isAir()) {
+                            BlockState upper = restored.with(Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER);
+                            level.setBlockState(pos.up(), upper, 3);
                         }
                         PlantStore.saveIfDirty(); return true;
                     }
                 }
-                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                level.setBlockState(pos, Blocks.AIR.getDefaultState(), 3);
             } else {
-                level.setBlock(pos, state.setValue(SnowLayerBlock.LAYERS, layers - 1), 3);
+                level.setBlockState(pos, state.with(SnowBlock.LAYERS, layers - 1), 3);
             }
             return true;
         }
         if (isSnowBlock(state)) {
             int max = RealisticSnowPhysicsConfig.get().maxLayers;
-            level.setBlock(pos, Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, Math.max(1, max - 1)), 3); return true;
+            level.setBlockState(pos, Blocks.SNOW.getDefaultState().with(SnowBlock.LAYERS, Math.max(1, max - 1)), 3); return true;
         }
         return false;
     }
@@ -245,10 +245,10 @@ public final class SnowProcessor {
     private static final java.util.Map<Long, Boolean> valleyCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Integer> groundYCache = new java.util.HashMap<>();
     private static final java.util.Map<Long, Boolean> leafCache = new java.util.HashMap<>();
-    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
-    public static void processArea(ServerLevel level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) { processAreaBanded(level, centre, radius, centre.getX() - Math.max(radius, 128), centre.getX() + Math.max(radius, 128)); }
+    public static void processArea(ServerWorld level, BlockPos centre, int radius, int batchSize) { processArea(level, centre, radius, batchSize, new java.util.HashSet<Long>()); }
+    public static void processArea(ServerWorld level, BlockPos centre, int radius, int batchSize, java.util.Set<Long> processedColumns) { processAreaBanded(level, centre, radius, centre.getX() - Math.max(radius, 128), centre.getX() + Math.max(radius, 128)); }
     // Staggered: one band per tick, 30 bands per 30-second cycle, so a full 129x129 scan is spread over 30 ticks instead of 1 tick. Each column still gets 1 layer per 30s cycle, work is just spread out.
-    public static void tickStaggered(ServerLevel level, BlockPos centre, long tickCount) {
+    public static void tickStaggered(ServerWorld level, BlockPos centre, long tickCount) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         if (!config.enabled) return;
         if (tickScale(level) <= 0.0) return;
@@ -263,7 +263,7 @@ public final class SnowProcessor {
         staggeredBand++;
         processAreaBanded(level, centre, config.sampleRadius, xStart, xEnd);
     }
-    public static void processAreaBanded(ServerLevel level, BlockPos centre, int radius, int xStartBand, int xEndBand) {
+    public static void processAreaBanded(ServerWorld level, BlockPos centre, int radius, int xStartBand, int xEndBand) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         if (!config.enabled) return;
         double scale = tickScale(level);
@@ -277,18 +277,18 @@ public final class SnowProcessor {
         java.util.Set<Long> leafCoveredSet = new java.util.HashSet<>();
         java.util.ArrayList<BlockPos> allSnow = new java.util.ArrayList<>();
         java.util.ArrayList<BlockPos> bareByY = new java.util.ArrayList<>();
-        java.util.Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunkCache = new java.util.HashMap<>();
+        java.util.Map<Long, net.minecraft.world.chunk.WorldChunk> chunkCache = new java.util.HashMap<>();
         for (int x = xStartBand; x <= xEndBand; x++) {
             for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
-                if (!level.isLoaded(new BlockPos(x, centre.getY(), z))) continue;
+                if (!level.isChunkLoaded(x >> 4, z >> 4)) continue;
                 long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
-                net.minecraft.world.level.chunk.LevelChunk chunk = chunkCache.get(chunkKey);
+                net.minecraft.world.chunk.WorldChunk chunk = chunkCache.get(chunkKey);
                 if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
-                int topY = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+                int topY = level.getTopY(net.minecraft.world.Heightmap.Type.WORLD_SURFACE, x, z);
                 // Scan down from top to find ground and snow in this column, within a reasonable band around the player and terrain.
                 // Use topY as terrain height, not player Y, so hills and valleys are both covered.
                 boolean leafAbove = false;
-                for (int y = topY + 3; y >= topY - 40 && y >= level.getMinY(); y--) {
+                for (int y = topY + 3; y >= topY - 40 && y >= level.getBottomY(); y--) {
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = chunk.getBlockState(pos);
                     if (isSnow(state)) { allSnow.add(pos); continue; }
@@ -296,7 +296,7 @@ public final class SnowProcessor {
                     String sid = blockId(state);
                     if (sid.endsWith("_leaves")) {
                         leafAbove = true;
-                        BlockPos above = pos.above();
+                        BlockPos above = pos.up();
                         if (chunk.getBlockState(above).isAir() && canHoldSnow(level, pos)) {
                             byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
                         }
@@ -305,10 +305,10 @@ public final class SnowProcessor {
                     if (!state.isAir()) {
                         if (PlantStore.isPlant(state)) {
                             BlockPos lowest = pos;
-                            while (PlantStore.isPlant(chunk.getBlockState(lowest.below()))) {
-                                lowest = lowest.below();
+                            while (PlantStore.isPlant(chunk.getBlockState(lowest.down()))) {
+                                lowest = lowest.down();
                             }
-                            BlockPos below = lowest.below();
+                            BlockPos below = lowest.down();
                             if (canHoldSnow(level, below)) {
                                 groundYCache.put(((long) x << 32) | (z & 0xffffffffL), below.getY());
                                 byGroundY.computeIfAbsent(below.getY(), k -> new java.util.ArrayList<>()).add(lowest);
@@ -316,7 +316,7 @@ public final class SnowProcessor {
                             }
                             break;
                         }
-                        BlockPos above = pos.above();
+                        BlockPos above = pos.up();
                         BlockState aboveState = chunk.getBlockState(above);
                         if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
                             groundYCache.put(((long) x << 32) | (z & 0xffffffffL), pos.getY());
@@ -335,7 +335,7 @@ public final class SnowProcessor {
         // Reuses allSnow from the heightmap scan, no second direct box scan, which was a major overload cause.
         // Randomization: 15% skip per segment per melt pass, same as accumulation.
         if (config.meltEnabled) {
-            boolean day = level.isBrightOutside();
+            boolean day = level.isDay();
             // Group allSnow by column, sort y descending, melt top of each continuous run
             java.util.Map<Long, java.util.ArrayList<BlockPos>> byCol = new java.util.HashMap<>();
             for (BlockPos pos : allSnow) {
@@ -357,7 +357,7 @@ public final class SnowProcessor {
                     if (snowingInBiome) continue;
                     if (level.getRandom().nextDouble() < 0.15) continue;
                     boolean heated = false;
-                    if (level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos) > 0) {
+                    if (level.getLightLevel(net.minecraft.world.LightType.BLOCK, pos) > 0) {
                         heated = hasHeatNearby(level, pos, config.heatRadius);
                     }
                     if (heated) { melt(level, pos); continue; }
@@ -375,10 +375,10 @@ public final class SnowProcessor {
                 if (plant != null) {
                     BlockState restored = PlantStore.restoreState(plant);
                     if (restored != null) {
-                        level.setBlock(pos, restored, 3);
-                        if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.above()).isAir()) {
-                            BlockState upper = restored.setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER);
-                            level.setBlock(pos.above(), upper, 3);
+                        level.setBlockState(pos, restored, 3);
+                        if (PlantStore.isTallPlant(restored) && level.getBlockState(pos.up()).isAir()) {
+                            BlockState upper = restored.with(Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER);
+                            level.setBlockState(pos.up(), upper, 3);
                         }
                     }
                 }
@@ -420,7 +420,7 @@ public final class SnowProcessor {
             if (leafCol) { if (!leafPass || !isSnowingInBiome(level, pos)) continue; }
             else { if (!isSnowingInBiome(level, pos)) continue; }
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
-            if (isSnow(level.getBlockState(pos.above()))) continue;
+            if (isSnow(level.getBlockState(pos.up()))) continue;
             if (isValley(level, pos)) {
                 int myTop = topSnowY.getOrDefault(((long) pos.getX() << 32) | (pos.getZ() & 0xffffffffL), pos.getY());
                 int minNeighbourTop = Integer.MAX_VALUE;
@@ -434,13 +434,13 @@ public final class SnowProcessor {
             if (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)) {
                 BlockState st = level.getBlockState(pos);
                 if (isSnowBlock(st)) continue;
-                if (isSnowLayer(st) && st.getValue(SnowLayerBlock.LAYERS) >= 4) continue;
+                if (isSnowLayer(st) && st.get(SnowBlock.LAYERS) >= 4) continue;
             }
             if (level.getRandom().nextDouble() < 0.15) continue;
             accumulate(level, pos);
         }
     }
-    public static void process(ServerLevel level, BlockPos pos) {
+    public static void process(ServerWorld level, BlockPos pos) {
         RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
         BlockState state = level.getBlockState(pos);
         if (config.meltEnabled && isSnow(state)) melt(level, pos);
