@@ -79,6 +79,12 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
                                 ServerLevel level = player.level();
                                 BlockPos centre = player.blockPosition();
                                 int radius = RealisticSnowPhysicsConfig.get().sampleRadius;
+                                int centreTop = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, centre.getX(), centre.getZ());
+                                LOGGER.info("[Realistic Snow Physics] SCANDEBUG centre {} topY {} minY {}", centre, centreTop, level.getMinY());
+                                for (int y = centreTop + 3; y >= centreTop - 10; y--) {
+                                    net.minecraft.core.BlockPos cp = new net.minecraft.core.BlockPos(centre.getX(), y, centre.getZ());
+                                    LOGGER.info("[Realistic Snow Physics] SCANDEBUG column {} block {}", cp, level.getBlockState(cp).getBlock());
+                                }
                                 int blocks = 0, layers = 0;
                                 for (int x = centre.getX() - radius; x <= centre.getX() + radius; x++) {
                                     for (int z = centre.getZ() - radius; z <= centre.getZ() + radius; z++) {
