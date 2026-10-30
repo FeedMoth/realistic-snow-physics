@@ -184,12 +184,25 @@ public final class SnowProcessor {
                 }
             }
         }
-        // Melt, original working version: unconditional, direct box, every snow melts one step per pass.
-        // No chance roll, no bright check, no heat check. If it is snow and not under a snow block, it melts.
+        // Melt, fixed properly, not unconditional and not random:
+        // - No random roll per block, that is what made melt patchy and chunky.
+        // - No isBrightOutside gate, that is what made full blocks never melt at dusk, in overcast, or under trees.
+        // - Daytime check is level.isDay(), so overcast daytime still melts.
+        // - Melt never runs while it is snowing on that column, so snowfall can still build.
+        // - Heated snow (torch, lava, fire, campfire, furnace) melts every second, day or night.
+        // - Warm biome daytime snow melts every 5 seconds, cold biome daytime snow every 10 seconds, one step for every snow in the area at once.
+        // - A full block therefore steps down 8 -> 7 -> 6 ... visibly, in about 40 seconds warm or 80 seconds cold in daytime, not instantly and not never.
         if (config.meltEnabled) {
+            boolean day = level.isDay();
             for (BlockPos pos : allSnow) {
                 if (isSnowBlock(level.getBlockState(pos.above()))) continue;
-                melt(level, pos);
+                if (canAccumulatePrecipitation(level, pos)) continue;
+                boolean heated = hasHeatNearby(level, pos, config.heatRadius);
+                if (heated) { melt(level, pos); continue; }
+                if (!day) continue;
+                boolean warm = effectiveTemperature(level, pos) >= config.warmBiomeTemperature;
+                if (warm) { if (passCounter % 5 == 0) melt(level, pos); }
+                else { if (passCounter % 10 == 0) melt(level, pos); }
             }
         }
         // Plant restoration after melt, for bare spots where snow is gone and it is not snowing.
