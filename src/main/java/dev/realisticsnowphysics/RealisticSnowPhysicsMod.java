@@ -45,6 +45,19 @@ public class RealisticSnowPhysicsMod implements ModInitializer {
         PlantStore.load();
         LOGGER.info("[Realistic Snow Physics] loaded: snow builds up in snowfall and melts near heat");
 
+        // Falling queue runs every tick, not every 5 seconds, so a layer
+        // whose support was just removed falls immediately, 4 per tick,
+        // one at a time in waves for large collapses, instead of waiting
+        // for a scan. Scan cost is gone from this path, the queue is
+        // populated by the snow layer updateShape mixin and by the
+        // periodic scan in the main handler below.
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (!RealisticSnowPhysicsConfig.get().enabled) return;
+            for (ServerLevel level : server.getAllLevels()) {
+                try { FallingSnow.processQueue(level); } catch (Exception e) { LOGGER.error("[Realistic Snow Physics] error processing falling queue", e); }
+            }
+        });
+
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             RealisticSnowPhysicsConfig config = RealisticSnowPhysicsConfig.get();
             if (!config.enabled) {

@@ -252,8 +252,8 @@ public final class SnowProcessor {
         passCounter++;
         if (passCounter % 30 != 0) return;
         valleyCache.clear(); leafCache.clear(); groundYCache.clear();
-        // Wide area, 96: 193x193 columns, covers nearby biomes, with per-pass caches to keep cost down.
-        int wideRadius = Math.max(radius, 96);
+        // Wide area, 64: 129x129 columns, chunk-cached scan, per-pass caches to keep cost down. Radius dropped from 128/96 to 64 to kill the 4-7s spike, behaviour per column unchanged.
+        int wideRadius = Math.max(radius, 64);
         // Collect every column in the wide area, grouped by ground Y, lowest first.
         // Ground Y is the Y of the top solid block in that column, found by direct scan down from centre+10 and world surface.
         java.util.TreeMap<Integer, java.util.ArrayList<BlockPos>> byGroundY = new java.util.TreeMap<>();
@@ -264,20 +264,23 @@ public final class SnowProcessor {
         for (int x = centre.getX() - wideRadius; x <= centre.getX() + wideRadius; x++) {
             for (int z = centre.getZ() - wideRadius; z <= centre.getZ() + wideRadius; z++) {
                 if (!level.isLoaded(new BlockPos(x, centre.getY(), z))) continue;
-                int topY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+                long chunkKey = ((long) (x >> 4) << 32) | ((z >> 4) & 0xffffffffL);
+                net.minecraft.world.level.chunk.LevelChunk chunk = chunkCache.get(chunkKey);
+                if (chunk == null) { chunk = level.getChunk(x >> 4, z >> 4); chunkCache.put(chunkKey, chunk); }
+                int topY = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
                 // Scan down from top to find ground and snow in this column, within a reasonable band around the player and terrain.
                 // Use topY as terrain height, not player Y, so hills and valleys are both covered.
                 boolean leafAbove = false;
                 for (int y = topY + 3; y >= topY - 40 && y >= level.getMinY(); y--) {
                     BlockPos pos = new BlockPos(x, y, z);
-                    BlockState state = level.getBlockState(pos);
+                    BlockState state = chunk.getBlockState(pos);
                     if (isSnow(state)) { allSnow.add(pos); continue; }
                     if (state.isAir()) continue;
                     String sid = blockId(state);
                     if (sid.endsWith("_leaves")) {
                         leafAbove = true;
                         BlockPos above = pos.above();
-                        if (level.getBlockState(above).isAir() && canHoldSnow(level, pos)) {
+                        if (chunk.getBlockState(above).isAir() && canHoldSnow(level, pos)) {
                             byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
                         }
                         continue;
@@ -285,7 +288,7 @@ public final class SnowProcessor {
                     if (!state.isAir()) {
                         if (PlantStore.isPlant(state)) {
                             BlockPos lowest = pos;
-                            while (PlantStore.isPlant(level.getBlockState(lowest.below()))) {
+                            while (PlantStore.isPlant(chunk.getBlockState(lowest.below()))) {
                                 lowest = lowest.below();
                             }
                             BlockPos below = lowest.below();
@@ -297,7 +300,7 @@ public final class SnowProcessor {
                             break;
                         }
                         BlockPos above = pos.above();
-                        BlockState aboveState = level.getBlockState(above);
+                        BlockState aboveState = chunk.getBlockState(above);
                         if ((aboveState.isAir() || PlantStore.isPlant(aboveState)) && canHoldSnow(level, pos)) {
                             groundYCache.put(((long) x << 32) | (z & 0xffffffffL), pos.getY());
                             byGroundY.computeIfAbsent(pos.getY(), k -> new java.util.ArrayList<>()).add(above);
