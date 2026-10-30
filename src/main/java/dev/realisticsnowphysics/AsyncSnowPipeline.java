@@ -616,7 +616,7 @@ public final class AsyncSnowPipeline {
                 PlantStore.saveIfDirty();
             }
             case BURY_PLANT, SET_LAYER_AND_AIR_ABOVE -> {
-                Block plantBlock = Registries.BLOCK.get(Identifier.of(c.plantId));
+                Block plantBlock = Registries.BLOCK.get(new Identifier(c.plantId));
                 if (plantBlock != null && plantBlock != Blocks.AIR) {
                     PlantStore.store(level, pos, plantBlock.getDefaultState());
                 }

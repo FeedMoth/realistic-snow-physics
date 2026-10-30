@@ -181,7 +181,7 @@ public final class PlantStore {
     }
 
     public static BlockState restoreState(StoredPlant plant) {
-        Block block = Registries.BLOCK.get(net.minecraft.util.Identifier.of(plant.block));
+        Block block = Registries.BLOCK.get(net.minecraft.util.new Identifier(plant.block));
         if (block == null || block == Blocks.AIR) {
             return null;
         }
