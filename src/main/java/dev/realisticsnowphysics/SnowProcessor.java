@@ -56,6 +56,9 @@ public final class SnowProcessor {
     public static boolean isSnowing(ServerLevel level, BlockPos pos) {
         return level.isRaining() && level.canSeeSky(pos) && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f;
     }
+    public static boolean isSnowingInBiome(ServerLevel level, BlockPos pos) {
+        return (level.isRaining() && level.getBiome(pos).value().hasPrecipitation() && effectiveTemperature(level, pos) < 0.15f) || SeasonsHook.forceSnowPrecipitation();
+    }
     public static boolean isForcedSnowPrecipitation(ServerLevel level, BlockPos pos) {
         if (!SeasonsHook.forceSnowPrecipitation()) return false;
         if (!level.isRaining() || !level.canSeeSky(pos)) return false;
@@ -114,8 +117,9 @@ public final class SnowProcessor {
             if (diff > maxDiff) maxDiff = diff;
         }
         if (count == 0) return false;
-        double avg = (double) totalDiff / count;
-        return avg >= 1.0 || (maxDiff >= 3 && avg >= 0.5) || higher >= count / 2;
+        // Valley if at least one neighbour in radius 6 is higher, and the column is not above average terrain.
+        // Old avg>=1 rule failed for small pits and wide valley floors, where most neighbours are flat and only walls are higher.
+        return maxDiff >= 1 && totalDiff >= 0;
     }
     public static boolean accumulate(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
@@ -308,7 +312,7 @@ public final class SnowProcessor {
         for (java.util.Map.Entry<Integer, java.util.ArrayList<BlockPos>> e : byGroundY.entrySet()) {
             for (BlockPos pos : e.getValue()) {
                 if (canAccumulatePrecipitation(level, pos)) accumBare.add(pos);
-                else if (leafPass && (leafCoveredSet.contains(pos.asLong()) || canAccumulateUnderLeaves(level, pos))) accumBare.add(pos);
+                else if (leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos))) accumBare.add(pos);
             }
         }
         for (BlockPos pos : accumBare) {
@@ -321,7 +325,7 @@ public final class SnowProcessor {
         // Group top snow by ground Y: ground Y is snow Y minus snow height, approximate by snow Y itself for ordering.
         allSnow.sort((a, b) -> Integer.compare(a.getY(), b.getY()));
         for (BlockPos pos : allSnow) {
-            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && (leafCoveredSet.contains(pos.asLong()) || canAccumulateUnderLeaves(level, pos)))) continue;
+            if (!canAccumulatePrecipitation(level, pos) && !(leafPass && isSnowingInBiome(level, pos) && (leafCoveredSet.contains(pos.asLong()) || isLeafCovered(level, pos)))) continue;
             // Only pile on the top snow in a column: if there is snow directly above, skip, that upper snow will pile instead.
             if (isSnow(level.getBlockState(pos.above()))) continue;
             if (leafCoveredSet.contains(pos.asLong())) {
